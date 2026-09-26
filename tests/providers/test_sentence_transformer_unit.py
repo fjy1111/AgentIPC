@@ -55,7 +55,9 @@ def install_fake(
     return fake
 
 
-def test_module_import_and_constructor_are_lazy(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_module_import_and_constructor_are_lazy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     called = False
 
     def fail_if_loaded() -> object:
@@ -63,11 +65,24 @@ def test_module_import_and_constructor_are_lazy(monkeypatch: pytest.MonkeyPatch)
         called = True
         raise AssertionError("constructor must not load sentence-transformers")
 
-    monkeypatch.setattr(provider_module, "_load_sentence_transformer_class", fail_if_loaded)
-    provider = SentenceTransformerEmbeddingProvider("model")
+    monkeypatch.setattr(
+        provider_module,
+        "_load_sentence_transformer_class",
+        fail_if_loaded,
+    )
+
+    provider = SentenceTransformerEmbeddingProvider(
+        "model",
+        device="cpu",
+        local_files_only=True,
+    )
 
     assert SentenceTransformerEmbeddingProvider is not None
-    assert isinstance(provider, EmbeddingProvider)
+    assert provider._model_name == "model"
+    assert provider._device == "cpu"
+    assert provider._local_files_only is True
+    assert provider._model is None
+    assert provider._dim is None
     assert called is False
 
 
@@ -252,3 +267,12 @@ def test_encode_exception_propagates_unchanged(
         SentenceTransformerEmbeddingProvider("model").embed(["a"])
 
     assert exc_info.value is error
+
+def test_provider_structurally_satisfies_embedding_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = install_fake(monkeypatch, FakeModel(dimension=3))
+    provider = SentenceTransformerEmbeddingProvider("model")
+
+    assert isinstance(provider, EmbeddingProvider)
+    assert len(fake.calls) == 1
