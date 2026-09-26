@@ -19,6 +19,12 @@ dependencies = [
 dev = [
     "pytest>=7.4",
 ]
+openai = [
+    "openai>=3.0,<4.0",
+]
+sentence-transformers = [
+    "sentence-transformers>=6.0,<7.0",
+]
 
 [project.scripts]
 agentipc = "agentipc.cli:main"
