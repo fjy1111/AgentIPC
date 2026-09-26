@@ -101,7 +101,11 @@ class ArtifactStore:
 
     def get_bytes(self, ref: ArtifactRef) -> bytes:
         digest = self._digest_from_ref(ref)
-        return self._path_for_digest(digest).read_bytes()
+        payload = self._path_for_digest(digest).read_bytes()
+        actual_digest = hashlib.sha256(payload).hexdigest()
+        if actual_digest != digest:
+            raise ValueError("artifact sha256 integrity check failed")
+        return payload
 
     def get_json(self, ref: ArtifactRef) -> Any:
         if not isinstance(ref, ArtifactRef):
