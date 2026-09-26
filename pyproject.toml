@@ -20,5 +20,8 @@ dev = [
     "pytest>=7.4",
 ]
 
+[project.scripts]
+agentipc = "agentipc.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
