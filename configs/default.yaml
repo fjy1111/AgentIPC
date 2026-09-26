@@ -1,0 +1,7 @@
+state_root: .agentipc/state
+memory_root: .agentipc/memory
+artifact_root: .agentipc/artifacts
+results_root: results
+llm_provider: mock
+embedding_provider: hash
+random_seed: 42
