@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from agentipc.memory.models import MemoryRecord
+from agentipc.utils import utc_timestamp
 
 
 _DB_FILENAME = "memory.sqlite3"
@@ -67,23 +69,44 @@ INSERT INTO memories (
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
-_SELECT_BY_ID_SQL = """
+_SELECT_COLUMNS = """
+memory_id,
+source_agent,
+created_at,
+task_topic,
+summary,
+memory_type,
+tags_json,
+keywords_json,
+embedding_json,
+payload_json,
+reuse_count,
+success_count,
+failure_count,
+last_accessed_at
+"""
+
+_SELECT_BY_ID_SQL = f"""
 SELECT
-    memory_id,
-    source_agent,
-    created_at,
-    task_topic,
-    summary,
-    memory_type,
-    tags_json,
-    keywords_json,
-    embedding_json,
-    payload_json,
-    reuse_count,
-    success_count,
-    failure_count,
-    last_accessed_at
+    {_SELECT_COLUMNS}
 FROM memories
+WHERE memory_id = ?
+"""
+
+_LIST_RECORDS_SQL = f"""
+SELECT
+    {_SELECT_COLUMNS}
+FROM memories
+ORDER BY created_at ASC, memory_id ASC
+"""
+
+_RECORD_USE_SQL = """
+UPDATE memories
+SET
+    reuse_count = reuse_count + 1,
+    success_count = success_count + ?,
+    failure_count = failure_count + ?,
+    last_accessed_at = ?
 WHERE memory_id = ?
 """
 
@@ -95,6 +118,37 @@ def _json_dumps(value: Any) -> str:
         sort_keys=True,
         separators=(",", ":"),
         allow_nan=False,
+    )
+
+
+def _validate_memory_id(memory_id: object) -> str:
+    if not isinstance(memory_id, str):
+        raise TypeError("memory_id must be a str")
+    if len(memory_id) == 0:
+        raise ValueError("memory_id must be non-empty")
+    return memory_id
+
+
+def _row_to_record(row: sqlite3.Row) -> MemoryRecord:
+    return MemoryRecord(
+        memory_id=row["memory_id"],
+        source_agent=row["source_agent"],
+        created_at=row["created_at"],
+        task_topic=row["task_topic"],
+        summary=row["summary"],
+        memory_type=row["memory_type"],
+        tags=json.loads(row["tags_json"]),
+        keywords=json.loads(row["keywords_json"]),
+        embedding=(
+            None
+            if row["embedding_json"] is None
+            else json.loads(row["embedding_json"])
+        ),
+        payload=json.loads(row["payload_json"]),
+        reuse_count=row["reuse_count"],
+        success_count=row["success_count"],
+        failure_count=row["failure_count"],
+        last_accessed_at=row["last_accessed_at"],
     )
 
 
@@ -156,35 +210,64 @@ class SQLiteMemoryStore:
 
     def get(self, memory_id: str) -> MemoryRecord | None:
         connection = self._ensure_open()
-        if not isinstance(memory_id, str):
-            raise TypeError("memory_id must be a str")
-        if len(memory_id) == 0:
-            raise ValueError("memory_id must be non-empty")
+        validated_id = _validate_memory_id(memory_id)
 
-        row = connection.execute(_SELECT_BY_ID_SQL, (memory_id,)).fetchone()
+        row = connection.execute(_SELECT_BY_ID_SQL, (validated_id,)).fetchone()
         if row is None:
             return None
+        return _row_to_record(row)
 
-        return MemoryRecord(
-            memory_id=row["memory_id"],
-            source_agent=row["source_agent"],
-            created_at=row["created_at"],
-            task_topic=row["task_topic"],
-            summary=row["summary"],
-            memory_type=row["memory_type"],
-            tags=json.loads(row["tags_json"]),
-            keywords=json.loads(row["keywords_json"]),
-            embedding=(
-                None
-                if row["embedding_json"] is None
-                else json.loads(row["embedding_json"])
-            ),
-            payload=json.loads(row["payload_json"]),
-            reuse_count=row["reuse_count"],
-            success_count=row["success_count"],
-            failure_count=row["failure_count"],
-            last_accessed_at=row["last_accessed_at"],
-        )
+    def record_use(
+        self,
+        memory_id: str,
+        *,
+        effective: bool | None = None,
+        accessed_at: float | None = None,
+    ) -> MemoryRecord:
+        connection = self._ensure_open()
+        validated_id = _validate_memory_id(memory_id)
+
+        if effective is not None and type(effective) is not bool:
+            raise TypeError("effective must be a bool or None")
+
+        if accessed_at is None:
+            resolved_accessed_at = float(utc_timestamp())
+        else:
+            if isinstance(accessed_at, bool) or not isinstance(accessed_at, (int, float)):
+                raise TypeError("accessed_at must be an int, float, or None")
+            resolved_accessed_at = float(accessed_at)
+
+        if not math.isfinite(resolved_accessed_at) or resolved_accessed_at < 0.0:
+            raise ValueError("accessed_at must be finite and non-negative")
+
+        success_delta = 1 if effective is True else 0
+        failure_delta = 1 if effective is False else 0
+
+        with connection:
+            cursor = connection.execute(
+                _RECORD_USE_SQL,
+                (
+                    success_delta,
+                    failure_delta,
+                    resolved_accessed_at,
+                    validated_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(validated_id)
+
+            row = connection.execute(
+                _SELECT_BY_ID_SQL,
+                (validated_id,),
+            ).fetchone()
+            if row is None:  # pragma: no cover - guarded by the same transaction
+                raise KeyError(validated_id)
+            return _row_to_record(row)
+
+    def list_records(self) -> list[MemoryRecord]:
+        connection = self._ensure_open()
+        rows = connection.execute(_LIST_RECORDS_SQL).fetchall()
+        return [_row_to_record(row) for row in rows]
 
     def close(self) -> None:
         if self._connection is None:
