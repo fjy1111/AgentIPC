@@ -1,5 +1,6 @@
 from agentipc.artifacts.store import ArtifactStore
 from agentipc.evaluation.metrics import MetricsCollector
+from agentipc.memory.models import MemoryRecord
 from agentipc.memory.service import MemoryService
 from agentipc.protocol.codec import encode
 from agentipc.protocol.envelope import AgentEnvelope
@@ -216,13 +217,35 @@ class Orchestrator:
             memory_refs=[],
         )
         summarizer_result = self._dispatch(summarizer_request, ctx)
-        self._require_stage_result(
+        summarizer_payload = self._require_stage_result(
             summarizer_result,
             summarizer_request,
             action=ActionType.SUMMARIZE,
             capability="summarize",
             sender="summarizer",
         )
+
+        if ctx.use_memory:
+            candidate = summarizer_payload.get("memory_candidate")
+            if type(candidate) is not dict:
+                raise ValueError(
+                    "summarizer result requires dict result['memory_candidate']"
+                )
+
+            record = MemoryRecord(
+                memory_id=f"mem_{ctx.task_id}",
+                **candidate,
+            )
+            stored = ctx.memory_service.write(record)
+            if not isinstance(stored, MemoryRecord):
+                raise ValueError(
+                    "MemoryService.write() must return a MemoryRecord"
+                )
+            if stored.memory_id != record.memory_id:
+                raise ValueError(
+                    "stored memory_id does not match requested memory_id"
+                )
+
         return summarizer_result
 
     def _dispatch(
