@@ -1,8 +1,10 @@
 from agentipc.artifacts.store import ArtifactStore
 from agentipc.evaluation.metrics import MetricsCollector
+from agentipc.memory.service import MemoryService
 from agentipc.protocol.codec import encode
 from agentipc.protocol.envelope import AgentEnvelope
 from agentipc.protocol.enums import ActionType, MessageStatus, MessageType
+from agentipc.protocol.refs import MemoryRef
 from agentipc.runtime.context import RunContext, RunMode
 from agentipc.runtime.router import Router
 from agentipc.runtime.text_transport import TextTransport
@@ -47,19 +49,25 @@ class Orchestrator:
             raise ValueError("task must be a non-empty str")
         if type(ctx.use_state) is not bool:
             raise TypeError("ctx.use_state must be a bool")
+        if type(ctx.use_memory) is not bool:
+            raise TypeError("ctx.use_memory must be a bool")
+        if ctx.use_memory and not isinstance(ctx.memory_service, MemoryService):
+            raise TypeError(
+                "use_memory=True requires ctx.memory_service to be a MemoryService"
+            )
         if ctx.mode is RunMode.TEXT:
             if self._text_transport is None:
                 raise ValueError("text mode requires TextTransport")
             if ctx.use_state:
                 raise ValueError("text mode does not support use_state=True")
+            if ctx.use_memory:
+                raise ValueError("text mode does not support use_memory=True")
         elif ctx.mode is not RunMode.STRUCTURED:
             raise ValueError("unsupported run mode")
         if ctx.use_state and not isinstance(ctx.state_hub, StateHub):
             raise _StateHubConfigurationError(
                 "use_state=True requires ctx.state_hub to be a StateHub"
             )
-        if ctx.use_memory is not False:
-            raise ValueError("T097 requires use_memory=False")
         if ctx.use_sandbox is not False:
             raise ValueError("T097 requires use_sandbox=False")
 
@@ -88,6 +96,22 @@ class Orchestrator:
         if type(plan) is not dict:
             raise ValueError("planner result requires dict result['plan']")
 
+        memory_refs: list[MemoryRef] = []
+        if ctx.use_memory:
+            retrieved = ctx.memory_service.retrieve(task)
+            if type(retrieved) is not list or not all(
+                isinstance(ref, MemoryRef) for ref in retrieved
+            ):
+                raise ValueError(
+                    "MemoryService.retrieve() must return a list[MemoryRef]"
+                )
+            memory_refs = retrieved
+            if isinstance(ctx.metrics, MetricsCollector):
+                ctx.metrics.increment(
+                    "memory_retrieved",
+                    len(memory_refs),
+                )
+
         plan_state_ref = None
         if ctx.use_state:
             plan_vector = encode_plan_vector(plan)
@@ -108,7 +132,7 @@ class Orchestrator:
             args={"plan": plan},
             state_refs=[] if plan_state_ref is None else [plan_state_ref],
             artifact_refs=[],
-            memory_refs=[],
+            memory_refs=memory_refs,
         )
         retriever_result = self._dispatch(retriever_request, ctx)
         retriever_payload = self._require_stage_result(
