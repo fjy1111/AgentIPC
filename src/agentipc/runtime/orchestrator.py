@@ -1,6 +1,6 @@
 from agentipc.artifacts.store import ArtifactStore
 from agentipc.evaluation.metrics import MetricsCollector
-from agentipc.memory.models import MemoryRecord
+from agentipc.memory.models import MemoryRecord, MemoryType
 from agentipc.memory.service import MemoryService
 from agentipc.protocol.codec import encode
 from agentipc.protocol.envelope import AgentEnvelope
@@ -18,8 +18,45 @@ _RUNTIME_ID = "runtime"
 class _StateHubConfigurationError(TypeError, ValueError):
     pass
 
+
 class _MemoryServiceConfigurationError(TypeError, ValueError):
     pass
+
+
+def _select_reusable_memory(
+    *,
+    task: str,
+    memory_refs: list[MemoryRef],
+    memory_service: MemoryService,
+) -> tuple[MemoryRef, MemoryRecord] | None:
+    for ref in memory_refs:
+        record = memory_service.get(ref.memory_id)
+        if record is None:
+            raise ValueError(
+                "MemoryService.retrieve() returned a MemoryRef for a missing record: "
+                f"{ref.memory_id!r}"
+            )
+
+        if record.task_topic != task:
+            continue
+        if record.memory_type is not MemoryType.RESULT:
+            continue
+
+        historical_answer = record.payload.get("answer")
+        if type(historical_answer) is not str or historical_answer == "":
+            continue
+
+        cached_execution = record.payload.get("execution")
+        if type(cached_execution) is not dict:
+            continue
+        if cached_execution.get("operation") != "identity":
+            continue
+        if "output" not in cached_execution:
+            continue
+
+        return ref, record
+
+    return None
 
 
 class Orchestrator:
@@ -101,6 +138,7 @@ class Orchestrator:
             raise ValueError("planner result requires dict result['plan']")
 
         memory_refs: list[MemoryRef] = []
+        selected_memory: tuple[MemoryRef, MemoryRecord] | None = None
         if ctx.use_memory:
             retrieved = ctx.memory_service.retrieve(task)
             if type(retrieved) is not list or not all(
@@ -115,6 +153,11 @@ class Orchestrator:
                     "memory_retrieved",
                     len(memory_refs),
                 )
+            selected_memory = _select_reusable_memory(
+                task=task,
+                memory_refs=memory_refs,
+                memory_service=ctx.memory_service,
+            )
 
         plan_state_ref = None
         if ctx.use_state:
@@ -165,15 +208,26 @@ class Orchestrator:
                     "resolved artifact evidence does not match retriever evidence"
                 )
 
-        operation = {
-            "name": "identity",
-            "value": {
-                "retrieved_document_ids": [
-                    item["document_id"]
-                    for item in resolved_evidence
-                ],
-            },
-        }
+        if selected_memory is None:
+            operation = {
+                "name": "identity",
+                "value": {
+                    "retrieved_document_ids": [
+                        item["document_id"]
+                        for item in resolved_evidence
+                    ],
+                },
+            }
+        else:
+            _, selected_record = selected_memory
+            cached_execution = selected_record.payload["execution"]
+            operation = {
+                "name": "identity",
+                "value": cached_execution["output"],
+            }
+            if isinstance(ctx.metrics, MetricsCollector):
+                ctx.metrics.increment("memory_used")
+
         executor_request = AgentEnvelope(
             trace_id=ctx.trace_id,
             task_id=ctx.task_id,
@@ -245,6 +299,26 @@ class Orchestrator:
                 raise ValueError(
                     "stored memory_id does not match requested memory_id"
                 )
+
+            if selected_memory is not None:
+                final_answer = summarizer_payload.get("answer")
+                if type(final_answer) is not str or final_answer == "":
+                    raise ValueError(
+                        "summarizer result requires non-empty str result['answer']"
+                    )
+
+                selected_ref, selected_record = selected_memory
+                historical_answer = selected_record.payload["answer"]
+                effective = final_answer == historical_answer
+                ctx.memory_service.mark_used(
+                    selected_ref.memory_id,
+                    effective=effective,
+                )
+                if isinstance(ctx.metrics, MetricsCollector):
+                    if effective:
+                        ctx.metrics.increment("memory_effective")
+                    else:
+                        ctx.metrics.increment("memory_harmful")
 
         return summarizer_result
 
