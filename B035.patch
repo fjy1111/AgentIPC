@@ -1,0 +1,571 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 126c6b1e8ca6e9a1af59b99e13668f9d3c490166..859411da410abe79ac6509d307a6882ab605d0b1 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -25,6 +25,9 @@ openai = [
+ sentence-transformers = [
+     "sentence-transformers>=6.0,<7.0",
+ ]
++tiktoken = [
++    "tiktoken>=0.7,<1.0",
++]
+ 
+ [project.scripts]
+ agentipc = "agentipc.cli:main"
+diff --git a/src/agentipc/evaluation/text_counter.py b/src/agentipc/evaluation/text_counter.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..a131c298006cf6724ac4dbb4844e93928cdf7ade
+--- /dev/null
++++ b/src/agentipc/evaluation/text_counter.py
+@@ -0,0 +1,69 @@
++from __future__ import annotations
++
++import importlib
++from typing import Annotated, Any
++
++from pydantic import BaseModel, ConfigDict, Field
++
++
++StrictNonNegativeInt = Annotated[int, Field(ge=0, strict=True)]
++
++
++class TextCount(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    text_chars: StrictNonNegativeInt
++    text_tokens: StrictNonNegativeInt
++    token_method: str = Field(min_length=1)
++
++
++def _load_tiktoken() -> Any:
++    return importlib.import_module("tiktoken")
++
++
++class TextCounter:
++    def __init__(
++        self,
++        *,
++        encoding_name: str = "cl100k_base",
++        use_tiktoken: bool = True,
++    ) -> None:
++        if not isinstance(encoding_name, str):
++            raise TypeError("encoding_name must be a string")
++        if encoding_name == "":
++            raise ValueError("encoding_name must be non-empty")
++        if type(use_tiktoken) is not bool:
++            raise TypeError("use_tiktoken must be a bool")
++
++        self._encoding_name = encoding_name
++        self._use_tiktoken = use_tiktoken
++        self._encoding: Any | None = None
++
++    def count(self, text: str) -> TextCount:
++        if not isinstance(text, str):
++            raise TypeError("text must be a string")
++
++        text_chars = len(text)
++        if not self._use_tiktoken:
++            return TextCount(
++                text_chars=text_chars,
++                text_tokens=0,
++                token_method="unavailable",
++            )
++
++        if self._encoding is None:
++            try:
++                tiktoken = _load_tiktoken()
++            except (ModuleNotFoundError, ImportError):
++                return TextCount(
++                    text_chars=text_chars,
++                    text_tokens=0,
++                    token_method="unavailable",
++                )
++            self._encoding = tiktoken.get_encoding(self._encoding_name)
++
++        return TextCount(
++            text_chars=text_chars,
++            text_tokens=len(self._encoding.encode(text)),
++            token_method=f"tiktoken:{self._encoding_name}",
++        )
+diff --git a/src/agentipc/evaluation/trace.py b/src/agentipc/evaluation/trace.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6785a6294cfd8472dea80570d5b63278c32195e1
+--- /dev/null
++++ b/src/agentipc/evaluation/trace.py
+@@ -0,0 +1,89 @@
++from __future__ import annotations
++
++import json
++import math
++from pathlib import Path
++
++from pydantic import BaseModel, ConfigDict, Field, field_validator
++
++from agentipc.protocol.envelope import AgentEnvelope
++from agentipc.protocol.refs import ArtifactRef, MemoryRef, StateRef
++from agentipc.utils import utc_timestamp
++
++
++class TraceEvent(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    event_type: str = Field(min_length=1)
++    recorded_at: float
++
++    trace_id: str = Field(min_length=1)
++    task_id: str = Field(min_length=1)
++    message_id: str = Field(min_length=1)
++    step_id: str = Field(min_length=1)
++
++    sender: str = Field(min_length=1)
++    receiver: str = Field(min_length=1)
++
++    message_type: str = Field(min_length=1)
++    action: str | None
++    status: str = Field(min_length=1)
++
++    state_refs: list[StateRef]
++    artifact_refs: list[ArtifactRef]
++    memory_refs: list[MemoryRef]
++
++    @field_validator("recorded_at", mode="before")
++    @classmethod
++    def _validate_recorded_at(cls, value: object) -> float:
++        if isinstance(value, bool) or not isinstance(value, (int, float)):
++            raise ValueError("recorded_at must be an int or float")
++        normalized = float(value)
++        if not math.isfinite(normalized):
++            raise ValueError("recorded_at must be finite")
++        if normalized < 0:
++            raise ValueError("recorded_at must be non-negative")
++        return normalized
++
++
++class TraceLogger:
++    def __init__(self, path: str | Path) -> None:
++        if not isinstance(path, (str, Path)):
++            raise TypeError("path must be a string or Path")
++        self._path = Path(path)
++        self._path.parent.mkdir(parents=True, exist_ok=True)
++
++    @property
++    def path(self) -> Path:
++        return self._path
++
++    def log_envelope(self, envelope: AgentEnvelope) -> TraceEvent:
++        if not isinstance(envelope, AgentEnvelope):
++            raise TypeError("envelope must be an AgentEnvelope")
++
++        event = TraceEvent(
++            event_type="message",
++            recorded_at=utc_timestamp(),
++            trace_id=envelope.trace_id,
++            task_id=envelope.task_id,
++            message_id=envelope.message_id,
++            step_id=envelope.step_id,
++            sender=envelope.sender,
++            receiver=envelope.receiver,
++            message_type=envelope.message_type.value,
++            action=None if envelope.action is None else envelope.action.value,
++            status=envelope.status.value,
++            state_refs=list(envelope.state_refs),
++            artifact_refs=list(envelope.artifact_refs),
++            memory_refs=list(envelope.memory_refs),
++        )
++        line = json.dumps(
++            event.model_dump(mode="json"),
++            ensure_ascii=False,
++            sort_keys=True,
++            separators=(",", ":"),
++        )
++        with self._path.open("a", encoding="utf-8", newline="\n") as stream:
++            stream.write(line)
++            stream.write("\n")
++        return event
+diff --git a/tests/evaluation/test_text_counter.py b/tests/evaluation/test_text_counter.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e3b17fd39667058d9f659228a56dc70b09d5827d
+--- /dev/null
++++ b/tests/evaluation/test_text_counter.py
+@@ -0,0 +1,158 @@
++from __future__ import annotations
++
++from types import SimpleNamespace
++
++import pytest
++from pydantic import ValidationError
++
++from agentipc.evaluation.text_counter import TextCount, TextCounter
++
++
++def test_exact_chars_without_tiktoken() -> None:
++    result = TextCounter(use_tiktoken=False).count("A中🙂\n")
++
++    assert result.text_chars == 4
++    assert result.text_tokens == 0
++    assert result.token_method == "unavailable"
++
++
++def test_empty_text() -> None:
++    result = TextCounter(use_tiktoken=False).count("")
++
++    assert result.text_chars == 0
++    assert result.text_tokens == 0
++    assert result.token_method == "unavailable"
++
++
++def test_disabled_tiktoken_never_loads_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
++    def fail_loader() -> object:
++        raise AssertionError("tiktoken loader must not be called")
++
++    monkeypatch.setattr("agentipc.evaluation.text_counter._load_tiktoken", fail_loader)
++
++    result = TextCounter(use_tiktoken=False).count("hello")
++
++    assert result.text_chars == 5
++    assert result.text_tokens == 0
++    assert result.token_method == "unavailable"
++
++
++def test_missing_tiktoken_keeps_exact_char_count(monkeypatch: pytest.MonkeyPatch) -> None:
++    def missing_loader() -> object:
++        raise ModuleNotFoundError("No module named 'tiktoken'")
++
++    monkeypatch.setattr("agentipc.evaluation.text_counter._load_tiktoken", missing_loader)
++
++    result = TextCounter().count("A中🙂\n")
++
++    assert result.text_chars == 4
++    assert result.text_tokens == 0
++    assert result.token_method == "unavailable"
++
++
++def test_fake_tiktoken_counts_tokens_and_records_encoding(monkeypatch: pytest.MonkeyPatch) -> None:
++    calls: list[str] = []
++
++    class FakeEncoding:
++        def encode(self, text: str) -> list[int]:
++            assert text == "hello world"
++            return [10, 20, 30]
++
++    def get_encoding(name: str) -> FakeEncoding:
++        calls.append(name)
++        return FakeEncoding()
++
++    monkeypatch.setattr(
++        "agentipc.evaluation.text_counter._load_tiktoken",
++        lambda: SimpleNamespace(get_encoding=get_encoding),
++    )
++
++    result = TextCounter(encoding_name="test_encoding").count("hello world")
++
++    assert result.text_chars == 11
++    assert result.text_tokens == 3
++    assert result.token_method == "tiktoken:test_encoding"
++    assert calls == ["test_encoding"]
++
++
++def test_encoding_is_cached_per_counter_instance(monkeypatch: pytest.MonkeyPatch) -> None:
++    calls: list[str] = []
++
++    class FakeEncoding:
++        def encode(self, text: str) -> list[int]:
++            return list(range(len(text)))
++
++    def get_encoding(name: str) -> FakeEncoding:
++        calls.append(name)
++        return FakeEncoding()
++
++    monkeypatch.setattr(
++        "agentipc.evaluation.text_counter._load_tiktoken",
++        lambda: SimpleNamespace(get_encoding=get_encoding),
++    )
++    counter = TextCounter()
++
++    assert counter.count("a").text_tokens == 1
++    assert counter.count("ab").text_tokens == 2
++    assert calls == ["cl100k_base"]
++
++
++def test_tokenizer_get_encoding_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
++    def get_encoding(name: str) -> object:
++        raise RuntimeError(f"bad encoding: {name}")
++
++    monkeypatch.setattr(
++        "agentipc.evaluation.text_counter._load_tiktoken",
++        lambda: SimpleNamespace(get_encoding=get_encoding),
++    )
++
++    with pytest.raises(RuntimeError, match="bad encoding"):
++        TextCounter().count("hello")
++
++
++def test_tokenizer_encode_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
++    class FakeEncoding:
++        def encode(self, text: str) -> list[int]:
++            raise RuntimeError("encode failed")
++
++    monkeypatch.setattr(
++        "agentipc.evaluation.text_counter._load_tiktoken",
++        lambda: SimpleNamespace(get_encoding=lambda name: FakeEncoding()),
++    )
++
++    with pytest.raises(RuntimeError, match="encode failed"):
++        TextCounter().count("hello")
++
++
++@pytest.mark.parametrize("value", [None, b"text", 1, []])
++def test_count_rejects_non_string_input(value: object) -> None:
++    with pytest.raises(TypeError):
++        TextCounter(use_tiktoken=False).count(value)  # type: ignore[arg-type]
++
++
++@pytest.mark.parametrize("value", [None, 1, b"cl100k_base"])
++def test_encoding_name_rejects_non_string(value: object) -> None:
++    with pytest.raises(TypeError):
++        TextCounter(encoding_name=value)  # type: ignore[arg-type]
++
++
++def test_encoding_name_rejects_empty_string() -> None:
++    with pytest.raises(ValueError):
++        TextCounter(encoding_name="")
++
++
++@pytest.mark.parametrize("value", [1, 0, "true", None])
++def test_use_tiktoken_requires_exact_bool(value: object) -> None:
++    with pytest.raises(TypeError):
++        TextCounter(use_tiktoken=value)  # type: ignore[arg-type]
++
++
++def test_text_count_forbids_extra_fields_and_requires_strict_non_negative_ints() -> None:
++    with pytest.raises(ValidationError):
++        TextCount(text_chars=True, text_tokens=0, token_method="unavailable")
++    with pytest.raises(ValidationError):
++        TextCount(text_chars=0, text_tokens=-1, token_method="unavailable")
++    with pytest.raises(ValidationError):
++        TextCount(text_chars=0, text_tokens=0, token_method="")
++    with pytest.raises(ValidationError):
++        TextCount(text_chars=0, text_tokens=0, token_method="unavailable", extra=1)
+diff --git a/tests/evaluation/test_trace.py b/tests/evaluation/test_trace.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d8cc625cd4e53ebb7109fdc0b9ac6cec78f60b29
+--- /dev/null
++++ b/tests/evaluation/test_trace.py
+@@ -0,0 +1,217 @@
++from __future__ import annotations
++
++import json
++import math
++from pathlib import Path
++
++import pytest
++from pydantic import ValidationError
++
++from agentipc.evaluation.trace import TraceEvent, TraceLogger
++from agentipc.protocol.envelope import AgentEnvelope
++from agentipc.protocol.enums import ActionType, MessageStatus, MessageType
++from agentipc.protocol.refs import ArtifactRef, MemoryRef, StateRef
++
++
++def _state_ref() -> StateRef:
++    return StateRef(
++        uri="shm://plan-vector-1",
++        kind="plan_vector",
++        shape=[3],
++        dtype="float32",
++        nbytes=12,
++        checksum="state-checksum-sentinel",
++        transport="shared_memory",
++        summary="openEuler 网络恢复",
++    )
++
++
++def _artifact_ref() -> ArtifactRef:
++    return ArtifactRef(
++        uri="artifact://evidence-1",
++        sha256="a" * 64,
++        media_type="application/json",
++        size_bytes=128,
++        summary="证据摘要 sentinel",
++    )
++
++
++def _memory_ref() -> MemoryRef:
++    return MemoryRef(
++        memory_id="memory-复用-1",
++        score=0.95,
++        match_type="hybrid",
++        summary="历史经验 sentinel",
++    )
++
++
++def _envelope(message_id: str, *, step_id: str) -> AgentEnvelope:
++    return AgentEnvelope(
++        message_id=message_id,
++        trace_id="trace-fixed",
++        task_id="task-fixed",
++        step_id=step_id,
++        sender="规划器-α",
++        receiver="检索器-β",
++        message_type=MessageType.REQUEST,
++        action=ActionType.RETRIEVE,
++        args={"secret": "DO_NOT_TRACE_ARGS"},
++        result={"secret": "DO_NOT_TRACE_RESULT"},
++        state_refs=[_state_ref()],
++        artifact_refs=[_artifact_ref()],
++        memory_refs=[_memory_ref()],
++        status=MessageStatus.OK,
++        metrics={"secret": "DO_NOT_TRACE_METRICS"},
++    )
++
++
++def test_multi_event_jsonl_round_trip_and_order(tmp_path: Path) -> None:
++    path = tmp_path / "nested" / "trace.jsonl"
++    logger = TraceLogger(path)
++    envelope1 = _envelope("msg-1", step_id="step-1")
++    envelope2 = _envelope("msg-2", step_id="step-2")
++
++    event1 = logger.log_envelope(envelope1)
++    event2 = logger.log_envelope(envelope2)
++
++    assert logger.path == path
++    lines = path.read_text(encoding="utf-8").splitlines()
++    assert len(lines) == 2
++    parsed = [TraceEvent.model_validate_json(line) for line in lines]
++    assert parsed == [event1, event2]
++    assert [event.message_id for event in parsed] == ["msg-1", "msg-2"]
++
++
++def test_identity_enums_and_refs_are_preserved(tmp_path: Path) -> None:
++    envelope = _envelope("msg-identity", step_id="step-identity")
++    event = TraceLogger(tmp_path / "trace.jsonl").log_envelope(envelope)
++
++    assert event.event_type == "message"
++    assert event.trace_id == envelope.trace_id
++    assert event.task_id == envelope.task_id
++    assert event.message_id == envelope.message_id
++    assert event.step_id == envelope.step_id
++    assert event.sender == envelope.sender
++    assert event.receiver == envelope.receiver
++    assert event.message_type == MessageType.REQUEST.value
++    assert event.action == ActionType.RETRIEVE.value
++    assert event.status == MessageStatus.OK.value
++    assert event.state_refs == envelope.state_refs
++    assert event.artifact_refs == envelope.artifact_refs
++    assert event.memory_refs == envelope.memory_refs
++    assert math.isfinite(event.recorded_at)
++    assert event.recorded_at >= 0
++
++
++def test_none_action_serializes_as_json_null(tmp_path: Path) -> None:
++    envelope = _envelope("msg-no-action", step_id="step-no-action")
++    envelope.action = None
++    path = tmp_path / "trace.jsonl"
++
++    TraceLogger(path).log_envelope(envelope)
++    payload = json.loads(path.read_text(encoding="utf-8"))
++
++    assert payload["action"] is None
++
++
++def test_trace_excludes_args_result_metrics_and_resolved_payload(tmp_path: Path) -> None:
++    path = tmp_path / "trace.jsonl"
++    TraceLogger(path).log_envelope(_envelope("msg-small", step_id="step-small"))
++
++    raw = path.read_text(encoding="utf-8")
++    payload = json.loads(raw)
++
++    assert "args" not in payload
++    assert "result" not in payload
++    assert "metrics" not in payload
++    assert "DO_NOT_TRACE_ARGS" not in raw
++    assert "DO_NOT_TRACE_RESULT" not in raw
++    assert "DO_NOT_TRACE_METRICS" not in raw
++    assert payload["state_refs"][0]["uri"] == "shm://plan-vector-1"
++    assert payload["artifact_refs"][0]["uri"] == "artifact://evidence-1"
++    assert payload["memory_refs"][0]["memory_id"] == "memory-复用-1"
++
++
++def test_append_across_logger_instances(tmp_path: Path) -> None:
++    path = tmp_path / "trace.jsonl"
++    TraceLogger(path).log_envelope(_envelope("msg-1", step_id="step-1"))
++    TraceLogger(path).log_envelope(_envelope("msg-2", step_id="step-2"))
++
++    lines = path.read_text(encoding="utf-8").splitlines()
++    assert len(lines) == 2
++    assert [json.loads(line)["message_id"] for line in lines] == ["msg-1", "msg-2"]
++
++
++def test_unicode_and_deterministic_compact_json(tmp_path: Path) -> None:
++    path = tmp_path / "trace.jsonl"
++    TraceLogger(path).log_envelope(_envelope("msg-unicode", step_id="step-unicode"))
++
++    line = path.read_text(encoding="utf-8").splitlines()[0]
++    payload = json.loads(line)
++    expected = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
++
++    assert "openEuler 网络恢复" in line
++    assert "规划器-α" in line
++    assert line == expected
++
++
++def test_log_is_visible_before_return(tmp_path: Path) -> None:
++    path = tmp_path / "trace.jsonl"
++
++    event = TraceLogger(path).log_envelope(_envelope("msg-visible", step_id="step-visible"))
++
++    assert path.exists()
++    assert json.loads(path.read_text(encoding="utf-8"))["message_id"] == event.message_id
++
++
++def test_invalid_logger_input() -> None:
++    with pytest.raises(TypeError):
++        TraceLogger(object())  # type: ignore[arg-type]
++
++
++def test_log_envelope_requires_protocol_model(tmp_path: Path) -> None:
++    with pytest.raises(TypeError):
++        TraceLogger(tmp_path / "trace.jsonl").log_envelope({})  # type: ignore[arg-type]
++
++
++@pytest.mark.parametrize("value", [-1, float("nan"), float("inf"), -float("inf"), True, "1"])
++def test_recorded_at_must_be_finite_non_negative(value: object) -> None:
++    payload = {
++        "event_type": "message",
++        "recorded_at": value,
++        "trace_id": "trace",
++        "task_id": "task",
++        "message_id": "msg",
++        "step_id": "step",
++        "sender": "a",
++        "receiver": "b",
++        "message_type": "REQUEST",
++        "action": None,
++        "status": "OK",
++        "state_refs": [],
++        "artifact_refs": [],
++        "memory_refs": [],
++    }
++    with pytest.raises(ValidationError):
++        TraceEvent(**payload)
++
++
++def test_trace_event_forbids_extra_fields() -> None:
++    with pytest.raises(ValidationError):
++        TraceEvent(
++            event_type="message",
++            recorded_at=1.0,
++            trace_id="trace",
++            task_id="task",
++            message_id="msg",
++            step_id="step",
++            sender="a",
++            receiver="b",
++            message_type="REQUEST",
++            action=None,
++            status="OK",
++            state_refs=[],
++            artifact_refs=[],
++            memory_refs=[],
++            extra=1,
++        )
