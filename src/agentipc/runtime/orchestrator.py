@@ -112,215 +112,219 @@ class Orchestrator:
         if ctx.use_sandbox is not False:
             raise ValueError("T097 requires use_sandbox=False")
 
-        planner_request = AgentEnvelope(
-            trace_id=ctx.trace_id,
-            task_id=ctx.task_id,
-            step_id="step-plan",
-            sender=_RUNTIME_ID,
-            receiver="planner",
-            message_type=MessageType.REQUEST,
-            action=ActionType.PLAN,
-            args={"task": task},
-            state_refs=[],
-            artifact_refs=[],
-            memory_refs=[],
-        )
-        planner_result = self._dispatch(planner_request, ctx)
-        planner_payload = self._require_stage_result(
-            planner_result,
-            planner_request,
-            action=ActionType.PLAN,
-            capability="plan",
-            sender="planner",
-        )
-        plan = planner_payload.get("plan")
-        if type(plan) is not dict:
-            raise ValueError("planner result requires dict result['plan']")
-
-        memory_refs: list[MemoryRef] = []
-        selected_memory: tuple[MemoryRef, MemoryRecord] | None = None
-        if ctx.use_memory:
-            retrieved = ctx.memory_service.retrieve(task)
-            if type(retrieved) is not list or not all(
-                isinstance(ref, MemoryRef) for ref in retrieved
-            ):
-                raise ValueError(
-                    "MemoryService.retrieve() must return a list[MemoryRef]"
-                )
-            memory_refs = retrieved
-            if isinstance(ctx.metrics, MetricsCollector):
-                ctx.metrics.increment(
-                    "memory_retrieved",
-                    len(memory_refs),
-                )
-            selected_memory = _select_reusable_memory(
-                task=task,
-                memory_refs=memory_refs,
-                memory_service=ctx.memory_service,
-            )
-
         plan_state_ref = None
-        if ctx.use_state:
-            plan_vector = encode_plan_vector(plan)
-            plan_state_ref = ctx.state_hub.put_array(
-                plan_vector,
-                kind=PLAN_VECTOR_KIND,
-                summary="planner plan vector",
+        try:
+            planner_request = AgentEnvelope(
+                trace_id=ctx.trace_id,
+                task_id=ctx.task_id,
+                step_id="step-plan",
+                sender=_RUNTIME_ID,
+                receiver="planner",
+                message_type=MessageType.REQUEST,
+                action=ActionType.PLAN,
+                args={"task": task},
+                state_refs=[],
+                artifact_refs=[],
+                memory_refs=[],
             )
-
-        retriever_request = AgentEnvelope(
-            trace_id=ctx.trace_id,
-            task_id=ctx.task_id,
-            step_id="step-retrieve",
-            sender=_RUNTIME_ID,
-            receiver="retriever",
-            message_type=MessageType.REQUEST,
-            action=ActionType.RETRIEVE,
-            args={"plan": plan},
-            state_refs=[] if plan_state_ref is None else [plan_state_ref],
-            artifact_refs=[],
-            memory_refs=memory_refs,
-        )
-        retriever_result = self._dispatch(retriever_request, ctx)
-        retriever_payload = self._require_stage_result(
-            retriever_result,
-            retriever_request,
-            action=ActionType.RETRIEVE,
-            capability="retrieve",
-            sender="retriever",
-        )
-        evidence = retriever_payload.get("evidence")
-        if type(evidence) is not list:
-            raise ValueError("retriever result requires list result['evidence']")
-
-        evidence_ref = None
-        resolved_evidence = evidence
-        if isinstance(ctx.artifact_store, ArtifactStore):
-            evidence_ref = ctx.artifact_store.put_json(
-                evidence,
-                summary="retriever evidence",
+            planner_result = self._dispatch(planner_request, ctx)
+            planner_payload = self._require_stage_result(
+                planner_result,
+                planner_request,
+                action=ActionType.PLAN,
+                capability="plan",
+                sender="planner",
             )
-            resolved_evidence = ctx.artifact_store.get_json(evidence_ref)
-            if type(resolved_evidence) is not list:
-                raise ValueError("resolved artifact evidence must be a list")
-            if resolved_evidence != evidence:
-                raise ValueError(
-                    "resolved artifact evidence does not match retriever evidence"
-                )
+            plan = planner_payload.get("plan")
+            if type(plan) is not dict:
+                raise ValueError("planner result requires dict result['plan']")
 
-        if selected_memory is None:
-            operation = {
-                "name": "identity",
-                "value": {
-                    "retrieved_document_ids": [
-                        item["document_id"]
-                        for item in resolved_evidence
-                    ],
-                },
-            }
-        else:
-            _, selected_record = selected_memory
-            cached_execution = selected_record.payload["execution"]
-            operation = {
-                "name": "identity",
-                "value": cached_execution["output"],
-            }
-            if isinstance(ctx.metrics, MetricsCollector):
-                ctx.metrics.increment("memory_used")
-
-        executor_request = AgentEnvelope(
-            trace_id=ctx.trace_id,
-            task_id=ctx.task_id,
-            step_id="step-execute",
-            sender=_RUNTIME_ID,
-            receiver="executor",
-            message_type=MessageType.REQUEST,
-            action=ActionType.EXECUTE,
-            args={"operation": operation},
-            state_refs=[],
-            artifact_refs=[] if evidence_ref is None else [evidence_ref],
-            memory_refs=[],
-        )
-        executor_result = self._dispatch(executor_request, ctx)
-        executor_payload = self._require_stage_result(
-            executor_result,
-            executor_request,
-            action=ActionType.EXECUTE,
-            capability="execute",
-            sender="executor",
-        )
-        execution = executor_payload.get("execution")
-        if type(execution) is not dict:
-            raise ValueError("executor result requires dict result['execution']")
-
-        summarizer_request = AgentEnvelope(
-            trace_id=ctx.trace_id,
-            task_id=ctx.task_id,
-            step_id="step-summarize",
-            sender=_RUNTIME_ID,
-            receiver="summarizer",
-            message_type=MessageType.REQUEST,
-            action=ActionType.SUMMARIZE,
-            args={
-                "task": task,
-                "evidence": resolved_evidence,
-                "execution": execution,
-            },
-            state_refs=[],
-            artifact_refs=[],
-            memory_refs=[],
-        )
-        summarizer_result = self._dispatch(summarizer_request, ctx)
-        summarizer_payload = self._require_stage_result(
-            summarizer_result,
-            summarizer_request,
-            action=ActionType.SUMMARIZE,
-            capability="summarize",
-            sender="summarizer",
-        )
-
-        if ctx.use_memory:
-            candidate = summarizer_payload.get("memory_candidate")
-            if type(candidate) is not dict:
-                raise ValueError(
-                    "summarizer result requires dict result['memory_candidate']"
-                )
-
-            record = MemoryRecord(
-                memory_id=f"mem_{ctx.task_id}",
-                **candidate,
-            )
-            stored = ctx.memory_service.write(record)
-            if not isinstance(stored, MemoryRecord):
-                raise ValueError(
-                    "MemoryService.write() must return a MemoryRecord"
-                )
-            if stored.memory_id != record.memory_id:
-                raise ValueError(
-                    "stored memory_id does not match requested memory_id"
-                )
-
-            if selected_memory is not None:
-                final_answer = summarizer_payload.get("answer")
-                if type(final_answer) is not str or final_answer == "":
+            memory_refs: list[MemoryRef] = []
+            selected_memory: tuple[MemoryRef, MemoryRecord] | None = None
+            if ctx.use_memory:
+                retrieved = ctx.memory_service.retrieve(task)
+                if type(retrieved) is not list or not all(
+                    isinstance(ref, MemoryRef) for ref in retrieved
+                ):
                     raise ValueError(
-                        "summarizer result requires non-empty str result['answer']"
+                        "MemoryService.retrieve() must return a list[MemoryRef]"
+                    )
+                memory_refs = retrieved
+                if isinstance(ctx.metrics, MetricsCollector):
+                    ctx.metrics.increment(
+                        "memory_retrieved",
+                        len(memory_refs),
+                    )
+                selected_memory = _select_reusable_memory(
+                    task=task,
+                    memory_refs=memory_refs,
+                    memory_service=ctx.memory_service,
+                )
+
+            if ctx.use_state:
+                plan_vector = encode_plan_vector(plan)
+                plan_state_ref = ctx.state_hub.put_array(
+                    plan_vector,
+                    kind=PLAN_VECTOR_KIND,
+                    summary="planner plan vector",
+                )
+
+            retriever_request = AgentEnvelope(
+                trace_id=ctx.trace_id,
+                task_id=ctx.task_id,
+                step_id="step-retrieve",
+                sender=_RUNTIME_ID,
+                receiver="retriever",
+                message_type=MessageType.REQUEST,
+                action=ActionType.RETRIEVE,
+                args={"plan": plan},
+                state_refs=[] if plan_state_ref is None else [plan_state_ref],
+                artifact_refs=[],
+                memory_refs=memory_refs,
+            )
+            retriever_result = self._dispatch(retriever_request, ctx)
+            retriever_payload = self._require_stage_result(
+                retriever_result,
+                retriever_request,
+                action=ActionType.RETRIEVE,
+                capability="retrieve",
+                sender="retriever",
+            )
+            evidence = retriever_payload.get("evidence")
+            if type(evidence) is not list:
+                raise ValueError("retriever result requires list result['evidence']")
+
+            evidence_ref = None
+            resolved_evidence = evidence
+            if isinstance(ctx.artifact_store, ArtifactStore):
+                evidence_ref = ctx.artifact_store.put_json(
+                    evidence,
+                    summary="retriever evidence",
+                )
+                resolved_evidence = ctx.artifact_store.get_json(evidence_ref)
+                if type(resolved_evidence) is not list:
+                    raise ValueError("resolved artifact evidence must be a list")
+                if resolved_evidence != evidence:
+                    raise ValueError(
+                        "resolved artifact evidence does not match retriever evidence"
                     )
 
-                selected_ref, selected_record = selected_memory
-                historical_answer = selected_record.payload["answer"]
-                effective = final_answer == historical_answer
-                ctx.memory_service.mark_used(
-                    selected_ref.memory_id,
-                    effective=effective,
-                )
+            if selected_memory is None:
+                operation = {
+                    "name": "identity",
+                    "value": {
+                        "retrieved_document_ids": [
+                            item["document_id"]
+                            for item in resolved_evidence
+                        ],
+                    },
+                }
+            else:
+                _, selected_record = selected_memory
+                cached_execution = selected_record.payload["execution"]
+                operation = {
+                    "name": "identity",
+                    "value": cached_execution["output"],
+                }
                 if isinstance(ctx.metrics, MetricsCollector):
-                    if effective:
-                        ctx.metrics.increment("memory_effective")
-                    else:
-                        ctx.metrics.increment("memory_harmful")
+                    ctx.metrics.increment("memory_used")
 
-        return summarizer_result
+            executor_request = AgentEnvelope(
+                trace_id=ctx.trace_id,
+                task_id=ctx.task_id,
+                step_id="step-execute",
+                sender=_RUNTIME_ID,
+                receiver="executor",
+                message_type=MessageType.REQUEST,
+                action=ActionType.EXECUTE,
+                args={"operation": operation},
+                state_refs=[],
+                artifact_refs=[] if evidence_ref is None else [evidence_ref],
+                memory_refs=[],
+            )
+            executor_result = self._dispatch(executor_request, ctx)
+            executor_payload = self._require_stage_result(
+                executor_result,
+                executor_request,
+                action=ActionType.EXECUTE,
+                capability="execute",
+                sender="executor",
+            )
+            execution = executor_payload.get("execution")
+            if type(execution) is not dict:
+                raise ValueError("executor result requires dict result['execution']")
+
+            summarizer_request = AgentEnvelope(
+                trace_id=ctx.trace_id,
+                task_id=ctx.task_id,
+                step_id="step-summarize",
+                sender=_RUNTIME_ID,
+                receiver="summarizer",
+                message_type=MessageType.REQUEST,
+                action=ActionType.SUMMARIZE,
+                args={
+                    "task": task,
+                    "evidence": resolved_evidence,
+                    "execution": execution,
+                },
+                state_refs=[],
+                artifact_refs=[],
+                memory_refs=[],
+            )
+            summarizer_result = self._dispatch(summarizer_request, ctx)
+            summarizer_payload = self._require_stage_result(
+                summarizer_result,
+                summarizer_request,
+                action=ActionType.SUMMARIZE,
+                capability="summarize",
+                sender="summarizer",
+            )
+
+            if ctx.use_memory:
+                candidate = summarizer_payload.get("memory_candidate")
+                if type(candidate) is not dict:
+                    raise ValueError(
+                        "summarizer result requires dict result['memory_candidate']"
+                    )
+
+                record = MemoryRecord(
+                    memory_id=f"mem_{ctx.task_id}",
+                    **candidate,
+                )
+                stored = ctx.memory_service.write(record)
+                if not isinstance(stored, MemoryRecord):
+                    raise ValueError(
+                        "MemoryService.write() must return a MemoryRecord"
+                    )
+                if stored.memory_id != record.memory_id:
+                    raise ValueError(
+                        "stored memory_id does not match requested memory_id"
+                    )
+
+                if selected_memory is not None:
+                    final_answer = summarizer_payload.get("answer")
+                    if type(final_answer) is not str or final_answer == "":
+                        raise ValueError(
+                            "summarizer result requires non-empty str result['answer']"
+                        )
+
+                    selected_ref, selected_record = selected_memory
+                    historical_answer = selected_record.payload["answer"]
+                    effective = final_answer == historical_answer
+                    ctx.memory_service.mark_used(
+                        selected_ref.memory_id,
+                        effective=effective,
+                    )
+                    if isinstance(ctx.metrics, MetricsCollector):
+                        if effective:
+                            ctx.metrics.increment("memory_effective")
+                        else:
+                            ctx.metrics.increment("memory_harmful")
+
+            return summarizer_result
+        finally:
+            if plan_state_ref is not None:
+                ctx.state_hub.release(plan_state_ref)
 
     def _dispatch(
         self,

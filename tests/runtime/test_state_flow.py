@@ -266,7 +266,7 @@ def test_runtime_state_flow_changes_ranking_and_records_real_transfer(
         assert ref.transport in {"inproc", "shm"}
         assert ref.checksum
         assert ref.uri.startswith(("inproc://agentipc/", "shm://agentipc/"))
-        assert state_hub.exists(ref) is True
+        assert state_hub.exists(ref) is False
 
         snapshot = state_metrics.snapshot()
         assert snapshot.message_count == 8
@@ -424,7 +424,7 @@ def test_state_resolve_failure_propagates_without_baseline_fallback(
         assert state_hub.put_calls == 1
         assert state_hub.resolve_calls == 1
         assert len(state_hub.put_refs) == 1
-        assert state_hub.exists(state_hub.put_refs[0]) is True
+        assert state_hub.exists(state_hub.put_refs[0]) is False
         snapshot = metrics.snapshot()
         assert snapshot.message_count == 3
         assert snapshot.state_transfer_count == 1
