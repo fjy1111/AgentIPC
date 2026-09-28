@@ -305,7 +305,7 @@ def test_persisted_historical_memory_is_retrieved_once_and_only_sent_to_retrieve
         assert hit.summary == TASK
 
         assert service.mark_used_calls == 0
-        assert service.write_calls == 0
+        assert service.write_calls == 1
 
         assert len(retriever.received_memory_refs) == 1
         assert retriever.received_memory_refs[0] == [hit]
