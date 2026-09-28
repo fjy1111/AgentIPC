@@ -17,6 +17,9 @@ _RUNTIME_ID = "runtime"
 class _StateHubConfigurationError(TypeError, ValueError):
     pass
 
+class _MemoryServiceConfigurationError(TypeError, ValueError):
+    pass
+
 
 class Orchestrator:
     def __init__(
@@ -52,7 +55,7 @@ class Orchestrator:
         if type(ctx.use_memory) is not bool:
             raise TypeError("ctx.use_memory must be a bool")
         if ctx.use_memory and not isinstance(ctx.memory_service, MemoryService):
-            raise TypeError(
+            raise _MemoryServiceConfigurationError(
                 "use_memory=True requires ctx.memory_service to be a MemoryService"
             )
         if ctx.mode is RunMode.TEXT:
