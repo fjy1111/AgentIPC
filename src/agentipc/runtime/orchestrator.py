@@ -4,15 +4,27 @@ from agentipc.protocol.envelope import AgentEnvelope
 from agentipc.protocol.enums import ActionType, MessageStatus, MessageType
 from agentipc.runtime.context import RunContext, RunMode
 from agentipc.runtime.router import Router
+from agentipc.runtime.text_transport import TextTransport
 
 _RUNTIME_ID = "runtime"
 
 
 class Orchestrator:
-    def __init__(self, router: Router) -> None:
+    def __init__(
+        self,
+        router: Router,
+        *,
+        text_transport: TextTransport | None = None,
+    ) -> None:
         if not isinstance(router, Router):
             raise TypeError("router must be a Router")
+        if text_transport is not None and not isinstance(
+            text_transport,
+            TextTransport,
+        ):
+            raise TypeError("text_transport must be a TextTransport or None")
         self._router = router
+        self._text_transport = text_transport
 
     def run_task(
         self,
@@ -26,14 +38,17 @@ class Orchestrator:
             raise TypeError("task must be a str")
         if task == "":
             raise ValueError("task must be a non-empty str")
-        if ctx.mode is not RunMode.STRUCTURED:
-            raise ValueError("T095 only supports structured mode")
+        if ctx.mode is RunMode.TEXT:
+            if self._text_transport is None:
+                raise ValueError("text mode requires TextTransport")
+        elif ctx.mode is not RunMode.STRUCTURED:
+            raise ValueError("unsupported run mode")
         if ctx.use_state is not False:
-            raise ValueError("T095 requires use_state=False")
+            raise ValueError("T097 requires use_state=False")
         if ctx.use_memory is not False:
-            raise ValueError("T095 requires use_memory=False")
+            raise ValueError("T097 requires use_memory=False")
         if ctx.use_sandbox is not False:
-            raise ValueError("T095 requires use_sandbox=False")
+            raise ValueError("T097 requires use_sandbox=False")
 
         planner_request = AgentEnvelope(
             trace_id=ctx.trace_id,
@@ -147,6 +162,24 @@ class Orchestrator:
         return summarizer_result
 
     def _dispatch(
+        self,
+        request: AgentEnvelope,
+        ctx: RunContext,
+    ) -> AgentEnvelope:
+        if ctx.mode is RunMode.STRUCTURED:
+            return self._dispatch_structured(request, ctx)
+
+        if ctx.mode is RunMode.TEXT:
+            assert self._text_transport is not None
+            return self._text_transport.dispatch(
+                request,
+                ctx=ctx,
+                router=self._router,
+            )
+
+        raise ValueError("unsupported run mode")
+
+    def _dispatch_structured(
         self,
         request: AgentEnvelope,
         ctx: RunContext,
