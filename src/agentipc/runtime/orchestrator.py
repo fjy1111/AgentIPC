@@ -92,6 +92,8 @@ class Orchestrator:
             raise TypeError("ctx.use_state must be a bool")
         if type(ctx.use_memory) is not bool:
             raise TypeError("ctx.use_memory must be a bool")
+        if type(ctx.use_sandbox) is not bool:
+            raise TypeError("ctx.use_sandbox must be a bool")
         if ctx.use_memory and not isinstance(ctx.memory_service, MemoryService):
             raise _MemoryServiceConfigurationError(
                 "use_memory=True requires ctx.memory_service to be a MemoryService"
@@ -109,8 +111,6 @@ class Orchestrator:
             raise _StateHubConfigurationError(
                 "use_state=True requires ctx.state_hub to be a StateHub"
             )
-        if ctx.use_sandbox is not False:
-            raise ValueError("T097 requires use_sandbox=False")
 
         plan_state_ref = None
         try:
@@ -209,7 +209,22 @@ class Orchestrator:
                         "resolved artifact evidence does not match retriever evidence"
                     )
 
-            if selected_memory is None:
+            if selected_memory is not None:
+                _, selected_record = selected_memory
+                cached_execution = selected_record.payload["execution"]
+                operation = {
+                    "name": "identity",
+                    "value": cached_execution["output"],
+                }
+                if isinstance(ctx.metrics, MetricsCollector):
+                    ctx.metrics.increment("memory_used")
+            elif ctx.use_sandbox:
+                operation = {
+                    "name": "codeact",
+                    "code": task,
+                    "timeout_sec": 2.0,
+                }
+            else:
                 operation = {
                     "name": "identity",
                     "value": {
@@ -219,15 +234,6 @@ class Orchestrator:
                         ],
                     },
                 }
-            else:
-                _, selected_record = selected_memory
-                cached_execution = selected_record.payload["execution"]
-                operation = {
-                    "name": "identity",
-                    "value": cached_execution["output"],
-                }
-                if isinstance(ctx.metrics, MetricsCollector):
-                    ctx.metrics.increment("memory_used")
 
             executor_request = AgentEnvelope(
                 trace_id=ctx.trace_id,

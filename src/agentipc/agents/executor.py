@@ -5,8 +5,10 @@ import math
 from typing import TYPE_CHECKING, Any
 
 from agentipc.agents.base import BaseAgent
+from agentipc.evaluation.metrics import MetricsCollector
 from agentipc.protocol.envelope import AgentEnvelope
 from agentipc.protocol.enums import ActionType, MessageStatus, MessageType
+from agentipc.sandbox.python_runner import PythonSandbox
 
 if TYPE_CHECKING:
     from agentipc.runtime.context import RunContext
@@ -15,6 +17,7 @@ if TYPE_CHECKING:
 _IDENTITY_FIELDS = frozenset({"name", "value"})
 _ARITHMETIC_FIELDS = frozenset({"name", "operator", "operands"})
 _JSON_PICK_FIELDS = frozenset({"name", "value", "keys"})
+_CODEACT_FIELDS = frozenset({"name", "code", "timeout_sec"})
 _ARITHMETIC_OPERATORS = frozenset({"add", "subtract", "multiply", "divide"})
 
 
@@ -27,8 +30,6 @@ class ExecutorAgent(BaseAgent):
         envelope: AgentEnvelope,
         ctx: "RunContext",
     ) -> AgentEnvelope:
-        del ctx
-
         if envelope.message_type is not MessageType.REQUEST:
             raise ValueError("executor only accepts REQUEST envelopes")
         if envelope.action is not ActionType.EXECUTE:
@@ -54,6 +55,8 @@ class ExecutorAgent(BaseAgent):
             execution = _arithmetic(operation)
         elif name == "json_pick":
             execution = _json_pick(operation)
+        elif name == "codeact":
+            execution = _codeact(operation, ctx)
         else:
             raise ValueError(f"unsupported operation: {name!r}")
 
@@ -178,6 +181,61 @@ def _json_pick(operation: dict[str, Any]) -> dict[str, Any]:
     return {
         "operation": "json_pick",
         "output": selected,
+    }
+
+
+def _codeact(
+    operation: dict[str, Any],
+    ctx: "RunContext",
+) -> dict[str, Any]:
+    _require_exact_fields(
+        operation,
+        _CODEACT_FIELDS,
+        operation_name="codeact",
+    )
+
+    if "code" not in operation:
+        raise ValueError("codeact operation requires code")
+    code = operation["code"]
+    if type(code) is not str:
+        raise TypeError("codeact code must be a str")
+    if code == "":
+        raise ValueError("codeact code must be non-empty")
+
+    if "timeout_sec" not in operation:
+        raise ValueError("codeact operation requires timeout_sec")
+    timeout_sec = operation["timeout_sec"]
+    if isinstance(timeout_sec, bool) or not isinstance(
+        timeout_sec,
+        (int, float),
+    ):
+        raise TypeError("codeact timeout_sec must be an int or float")
+
+    normalized_timeout = float(timeout_sec)
+    if not math.isfinite(normalized_timeout):
+        raise ValueError("codeact timeout_sec must be finite")
+    if normalized_timeout <= 0:
+        raise ValueError("codeact timeout_sec must be greater than 0")
+
+    if ctx.use_sandbox is not True:
+        raise ValueError("codeact requires ctx.use_sandbox=True")
+
+    if isinstance(ctx.metrics, MetricsCollector):
+        ctx.metrics.increment("tool_call_count")
+
+    result = PythonSandbox().run(
+        code,
+        timeout_sec=timeout_sec,
+    )
+    return {
+        "operation": "codeact",
+        "output": {
+            "exit_code": result.exit_code,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "timed_out": result.timed_out,
+            "duration_ms": result.duration_ms,
+        },
     }
 
 
