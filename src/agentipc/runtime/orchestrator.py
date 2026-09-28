@@ -1,3 +1,4 @@
+from agentipc.artifacts.store import ArtifactStore
 from agentipc.evaluation.metrics import MetricsCollector
 from agentipc.protocol.codec import encode
 from agentipc.protocol.envelope import AgentEnvelope
@@ -100,12 +101,27 @@ class Orchestrator:
         if type(evidence) is not list:
             raise ValueError("retriever result requires list result['evidence']")
 
+        evidence_ref = None
+        resolved_evidence = evidence
+        if isinstance(ctx.artifact_store, ArtifactStore):
+            evidence_ref = ctx.artifact_store.put_json(
+                evidence,
+                summary="retriever evidence",
+            )
+            resolved_evidence = ctx.artifact_store.get_json(evidence_ref)
+            if type(resolved_evidence) is not list:
+                raise ValueError("resolved artifact evidence must be a list")
+            if resolved_evidence != evidence:
+                raise ValueError(
+                    "resolved artifact evidence does not match retriever evidence"
+                )
+
         operation = {
             "name": "identity",
             "value": {
                 "retrieved_document_ids": [
                     item["document_id"]
-                    for item in evidence
+                    for item in resolved_evidence
                 ],
             },
         }
@@ -119,7 +135,7 @@ class Orchestrator:
             action=ActionType.EXECUTE,
             args={"operation": operation},
             state_refs=[],
-            artifact_refs=[],
+            artifact_refs=[] if evidence_ref is None else [evidence_ref],
             memory_refs=[],
         )
         executor_result = self._dispatch(executor_request, ctx)
@@ -144,7 +160,7 @@ class Orchestrator:
             action=ActionType.SUMMARIZE,
             args={
                 "task": task,
-                "evidence": evidence,
+                "evidence": resolved_evidence,
                 "execution": execution,
             },
             state_refs=[],
@@ -200,6 +216,11 @@ class Orchestrator:
             payload = encode(envelope)
             ctx.metrics.increment("message_count")
             ctx.metrics.increment("protocol_bytes", len(payload))
+            if envelope.artifact_refs:
+                ctx.metrics.increment(
+                    "artifact_ref_count",
+                    len(envelope.artifact_refs),
+                )
 
         ctx.trace_logger.log_envelope(envelope)
 
