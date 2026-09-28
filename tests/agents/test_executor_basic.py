@@ -57,7 +57,7 @@ def test_identity_happy_path_is_protocol_valid_and_immutable() -> None:
 
     assert isinstance(agent, BaseAgent)
     assert ExecutorAgent.agent_id == "executor"
-    assert ExecutorAgent.capabilities == []
+    assert ExecutorAgent.capabilities == ["execute"]
     assert output is not request
     assert output.trace_id == request.trace_id
     assert output.task_id == request.task_id

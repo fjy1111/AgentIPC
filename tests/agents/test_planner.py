@@ -75,7 +75,7 @@ def test_planner_happy_path_is_stable_and_uses_provider() -> None:
 
     assert isinstance(planner, BaseAgent)
     assert PlannerAgent.agent_id == "planner"
-    assert PlannerAgent.capabilities == []
+    assert PlannerAgent.capabilities == ["plan"]
     assert isinstance(output, AgentEnvelope)
     assert output is not input_envelope
     assert output.trace_id == input_envelope.trace_id

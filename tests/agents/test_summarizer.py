@@ -132,7 +132,7 @@ def test_happy_path_is_exact_uses_provider_and_builds_memory_record() -> None:
 
     assert isinstance(agent, BaseAgent)
     assert SummarizerAgent.agent_id == "summarizer"
-    assert SummarizerAgent.capabilities == []
+    assert SummarizerAgent.capabilities == ["summarize"]
     assert output.trace_id == request.trace_id
     assert output.task_id == request.task_id
     assert output.step_id == request.step_id

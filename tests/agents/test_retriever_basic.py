@@ -120,7 +120,7 @@ def test_basic_retrieval_uses_real_embedding_and_returns_expected_envelope() -> 
 
     assert isinstance(RetrieverAgent(knowledge), BaseAgent)
     assert RetrieverAgent.agent_id == "retriever"
-    assert RetrieverAgent.capabilities == []
+    assert RetrieverAgent.capabilities == ["retrieve"]
 
     assert len(embedding.calls) == 1
     assert embedding.calls[0][0] == "NetworkManager network connectivity"
