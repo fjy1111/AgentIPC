@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -9,12 +10,45 @@ import threading
 import time
 from typing import BinaryIO
 
+from agentipc.sandbox.limits import build_resource_limit_preexec_fn
 from agentipc.sandbox.models import SandboxResult
 
 
 _OUTPUT_LIMIT_BYTES = 64 * 1024
 _READ_CHUNK_BYTES = 8192
 _TRUNCATION_MARKER = "\n...[AgentIPC output truncated]...\n"
+_INHERITED_ENV_KEYS = (
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+)
+
+
+def _build_child_environment(workspace: str) -> dict[str, str]:
+    child_env = {
+        key: os.environ[key]
+        for key in _INHERITED_ENV_KEYS
+        if key in os.environ
+    }
+    child_env.update(
+        {
+            "HOME": workspace,
+            "USERPROFILE": workspace,
+            "TMPDIR": workspace,
+            "TMP": workspace,
+            "TEMP": workspace,
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONUTF8": "1",
+        }
+    )
+    return child_env
 
 
 class _BoundedStreamCapture:
@@ -68,11 +102,15 @@ class PythonSandbox:
         with tempfile.TemporaryDirectory(prefix="agentipc-sandbox-") as workspace:
             script_path = Path(workspace) / "main.py"
             script_path.write_text(code, encoding="utf-8")
+            child_env = _build_child_environment(workspace)
+            preexec_fn = build_resource_limit_preexec_fn()
 
             started = time.perf_counter()
             process = subprocess.Popen(
                 [sys.executable, str(script_path)],
                 cwd=workspace,
+                env=child_env,
+                preexec_fn=preexec_fn,
                 shell=False,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
