@@ -1,3 +1,5 @@
+from agentipc.evaluation.metrics import MetricsCollector
+from agentipc.protocol.codec import encode
 from agentipc.protocol.envelope import AgentEnvelope
 from agentipc.protocol.enums import ActionType, MessageStatus, MessageType
 from agentipc.runtime.context import RunContext, RunMode
@@ -149,12 +151,24 @@ class Orchestrator:
         request: AgentEnvelope,
         ctx: RunContext,
     ) -> AgentEnvelope:
-        ctx.trace_logger.log_envelope(request)
+        self._record_structured_envelope(request, ctx)
         response = self._router.dispatch(request, ctx)
         if not isinstance(response, AgentEnvelope):
             raise ValueError("stage response must be an AgentEnvelope")
-        ctx.trace_logger.log_envelope(response)
+        self._record_structured_envelope(response, ctx)
         return response
+
+    @staticmethod
+    def _record_structured_envelope(
+        envelope: AgentEnvelope,
+        ctx: RunContext,
+    ) -> None:
+        if isinstance(ctx.metrics, MetricsCollector):
+            payload = encode(envelope)
+            ctx.metrics.increment("message_count")
+            ctx.metrics.increment("protocol_bytes", len(payload))
+
+        ctx.trace_logger.log_envelope(envelope)
 
     @staticmethod
     def _require_stage_result(
