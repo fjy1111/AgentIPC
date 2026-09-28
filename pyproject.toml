@@ -25,6 +25,9 @@ openai = [
 sentence-transformers = [
     "sentence-transformers>=6.0,<7.0",
 ]
+tiktoken = [
+    "tiktoken>=0.7,<1.0",
+]
 
 [project.scripts]
 agentipc = "agentipc.cli:main"
