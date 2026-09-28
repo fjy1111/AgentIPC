@@ -23,7 +23,7 @@ _SYSTEM_PROMPT = (
 
 class SummarizerAgent(BaseAgent):
     agent_id = "summarizer"
-    capabilities: list[str] = []
+    capabilities: list[str] = ["summarize"]
 
     def handle(
         self,

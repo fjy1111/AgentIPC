@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 class PlannerAgent(BaseAgent):
     agent_id = "planner"
-    capabilities: list[str] = []
+    capabilities: list[str] = ["plan"]
 
     def handle(
         self,

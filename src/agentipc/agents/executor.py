@@ -20,7 +20,7 @@ _ARITHMETIC_OPERATORS = frozenset({"add", "subtract", "multiply", "divide"})
 
 class ExecutorAgent(BaseAgent):
     agent_id = "executor"
-    capabilities: list[str] = []
+    capabilities: list[str] = ["execute"]
 
     def handle(
         self,

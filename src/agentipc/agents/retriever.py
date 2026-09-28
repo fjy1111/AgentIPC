@@ -47,7 +47,7 @@ class _KnowledgeItem:
 
 class RetrieverAgent(BaseAgent):
     agent_id = "retriever"
-    capabilities: list[str] = []
+    capabilities: list[str] = ["retrieve"]
 
     def __init__(
         self,
