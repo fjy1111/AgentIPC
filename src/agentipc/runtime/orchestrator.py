@@ -6,8 +6,14 @@ from agentipc.protocol.enums import ActionType, MessageStatus, MessageType
 from agentipc.runtime.context import RunContext, RunMode
 from agentipc.runtime.router import Router
 from agentipc.runtime.text_transport import TextTransport
+from agentipc.state.hub import StateHub
+from agentipc.state.plan_vector import PLAN_VECTOR_KIND, encode_plan_vector
 
 _RUNTIME_ID = "runtime"
+
+
+class _StateHubConfigurationError(TypeError, ValueError):
+    pass
 
 
 class Orchestrator:
@@ -39,13 +45,19 @@ class Orchestrator:
             raise TypeError("task must be a str")
         if task == "":
             raise ValueError("task must be a non-empty str")
+        if type(ctx.use_state) is not bool:
+            raise TypeError("ctx.use_state must be a bool")
         if ctx.mode is RunMode.TEXT:
             if self._text_transport is None:
                 raise ValueError("text mode requires TextTransport")
+            if ctx.use_state:
+                raise ValueError("text mode does not support use_state=True")
         elif ctx.mode is not RunMode.STRUCTURED:
             raise ValueError("unsupported run mode")
-        if ctx.use_state is not False:
-            raise ValueError("T097 requires use_state=False")
+        if ctx.use_state and not isinstance(ctx.state_hub, StateHub):
+            raise _StateHubConfigurationError(
+                "use_state=True requires ctx.state_hub to be a StateHub"
+            )
         if ctx.use_memory is not False:
             raise ValueError("T097 requires use_memory=False")
         if ctx.use_sandbox is not False:
@@ -76,6 +88,15 @@ class Orchestrator:
         if type(plan) is not dict:
             raise ValueError("planner result requires dict result['plan']")
 
+        plan_state_ref = None
+        if ctx.use_state:
+            plan_vector = encode_plan_vector(plan)
+            plan_state_ref = ctx.state_hub.put_array(
+                plan_vector,
+                kind=PLAN_VECTOR_KIND,
+                summary="planner plan vector",
+            )
+
         retriever_request = AgentEnvelope(
             trace_id=ctx.trace_id,
             task_id=ctx.task_id,
@@ -85,7 +106,7 @@ class Orchestrator:
             message_type=MessageType.REQUEST,
             action=ActionType.RETRIEVE,
             args={"plan": plan},
-            state_refs=[],
+            state_refs=[] if plan_state_ref is None else [plan_state_ref],
             artifact_refs=[],
             memory_refs=[],
         )
@@ -216,6 +237,15 @@ class Orchestrator:
             payload = encode(envelope)
             ctx.metrics.increment("message_count")
             ctx.metrics.increment("protocol_bytes", len(payload))
+            if envelope.state_refs:
+                ctx.metrics.increment(
+                    "state_transfer_count",
+                    len(envelope.state_refs),
+                )
+                ctx.metrics.increment(
+                    "state_bytes",
+                    sum(ref.nbytes for ref in envelope.state_refs),
+                )
             if envelope.artifact_refs:
                 ctx.metrics.increment(
                     "artifact_ref_count",
