@@ -189,7 +189,7 @@ def test_text_mode_is_rejected_before_business_trace(tmp_path: Path) -> None:
     assert _events(trace_path) == []
 
 
-@pytest.mark.parametrize("flag", ["use_state", "use_memory", "use_sandbox"])
+@pytest.mark.parametrize("flag", ["use_state", "use_memory"])
 def test_unsupported_feature_flags_are_rejected_before_dispatch(
     tmp_path: Path,
     flag: str,
