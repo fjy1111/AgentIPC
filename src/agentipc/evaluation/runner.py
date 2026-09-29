@@ -8,6 +8,7 @@ raw run record for later aggregation and analysis.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import replace
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
@@ -196,3 +197,106 @@ def run_single(
         use_sandbox=run_ctx.use_sandbox,
         run_result=run_result,
     )
+
+
+def run_repeated(
+    *,
+    experiment: ExperimentConfig,
+    task: str,
+    seeds: list[int],
+    run_factory: Callable[[int, int], tuple[RunContext, AgentRegistry]],
+) -> list[RawRunRecord]:
+    """Execute one experiment configuration multiple times with different seeds.
+
+    This function orchestrates repeated execution of run_single() with fresh
+    runtime contexts for each seed. The run_factory is responsible for creating
+    independent runtime environments to ensure experiment isolation.
+
+    Args:
+        experiment: The A/B/C/D experiment configuration to apply
+        task: The task description (non-empty string)
+        seeds: List of random seeds (non-empty, each seed >= 0)
+        run_factory: Callable that receives (run_index, seed) and returns
+                     (fresh RunContext, fresh AgentRegistry)
+
+    Returns:
+        List of RawRunRecord, one per seed, in the same order as seeds
+
+    Raises:
+        TypeError: If arguments have wrong types
+        ValueError: If seeds is empty, contains invalid values, or factory
+                    returns ctx with mismatched seed
+    """
+    # Validate experiment
+    if not isinstance(experiment, ExperimentConfig):
+        raise TypeError("experiment must be an ExperimentConfig")
+
+    # Validate task
+    if type(task) is not str:
+        raise TypeError("task must be a str")
+    if task == "":
+        raise ValueError("task must be a non-empty str")
+
+    # Validate seeds list
+    if type(seeds) is not list:
+        raise TypeError("seeds must be a list[int]")
+    if len(seeds) == 0:
+        raise ValueError("seeds must be a non-empty list[int]")
+
+    # Validate each seed before any execution
+    for i, seed in enumerate(seeds):
+        # Reject bool (bool is int subclass but not allowed)
+        if type(seed) is bool:
+            raise TypeError(f"seeds[{i}] must be int, not bool")
+        if type(seed) is not int:
+            raise TypeError(f"seeds[{i}] must be int, got {type(seed).__name__}")
+        if seed < 0:
+            raise ValueError(f"seeds[{i}] must be >= 0, got {seed}")
+
+    # Validate run_factory
+    if not callable(run_factory):
+        raise TypeError("run_factory must be callable")
+
+    # Execute repeated runs
+    records: list[RawRunRecord] = []
+
+    for run_index, seed in enumerate(seeds):
+        # Call factory to get fresh runtime components
+        factory_result = run_factory(run_index, seed)
+
+        # Validate factory return type
+        if type(factory_result) is not tuple:
+            raise TypeError(
+                f"run_factory must return tuple, got {type(factory_result).__name__}"
+            )
+        if len(factory_result) != 2:
+            raise TypeError(
+                f"run_factory must return tuple of length 2, got {len(factory_result)}"
+            )
+
+        ctx, agent_registry = factory_result
+
+        # Validate returned types
+        if not isinstance(ctx, RunContext):
+            raise TypeError("run_factory must return (RunContext, AgentRegistry)")
+        if not isinstance(agent_registry, AgentRegistry):
+            raise TypeError("run_factory must return (RunContext, AgentRegistry)")
+
+        # Verify seed matches
+        if ctx.config.random_seed != seed:
+            raise ValueError(
+                f"run_factory returned ctx with random_seed={ctx.config.random_seed}, "
+                f"expected {seed}"
+            )
+
+        # Execute single run
+        record = run_single(
+            experiment=experiment,
+            task=task,
+            ctx=ctx,
+            agent_registry=agent_registry,
+        )
+
+        records.append(record)
+
+    return records
