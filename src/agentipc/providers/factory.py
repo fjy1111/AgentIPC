@@ -8,14 +8,16 @@ from agentipc.providers.base import EmbeddingProvider, LLMProvider
 from agentipc.providers.hash_embedding import HashEmbeddingProvider
 from agentipc.providers.mock_llm import MockLLMProvider
 from agentipc.providers.openai_compatible import OpenAICompatibleProvider
+from agentipc.providers.openai_embedding import OpenAICompatibleEmbeddingProvider
 from agentipc.providers.sentence_transformer import SentenceTransformerEmbeddingProvider
 
 _LLM_PROVIDERS = ("mock", "openai")
-_EMBEDDING_PROVIDERS = ("hash", "sentence-transformer")
+_EMBEDDING_PROVIDERS = ("hash", "sentence-transformer", "openai")
 
 _MOCK_OPTIONS = frozenset({"keyword_responses", "default_text"})
 _HASH_OPTIONS = frozenset({"dim"})
 _OPENAI_OPTIONS = frozenset({"model", "api_key", "base_url", "timeout_sec"})
+_OPENAI_EMBEDDING_OPTIONS = frozenset({"model", "dim", "api_key", "base_url", "timeout_sec"})
 _SENTENCE_TRANSFORMER_OPTIONS = frozenset(
     {"model_name", "device", "local_files_only"}
 )
@@ -136,6 +138,23 @@ def _create_embedding(
                 "embedding_options['model_name']"
             )
         return SentenceTransformerEmbeddingProvider(**options)
+
+    if provider == "openai":
+        _reject_unknown_options(
+            options,
+            provider=provider,
+            option_group="embedding_options",
+            allowed=_OPENAI_EMBEDDING_OPTIONS,
+        )
+        if "model" not in options:
+            raise ValueError(
+                "openai embedding provider requires embedding_options['model']"
+            )
+        if "dim" not in options:
+            raise ValueError(
+                "openai embedding provider requires embedding_options['dim']"
+            )
+        return OpenAICompatibleEmbeddingProvider(**options)
 
     allowed_text = ", ".join(_EMBEDDING_PROVIDERS)
     raise ValueError(

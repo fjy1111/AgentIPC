@@ -46,6 +46,7 @@ def test_default_path_does_not_construct_optional_providers(monkeypatch) -> None
         raise AssertionError("optional provider must not be constructed")
 
     monkeypatch.setattr(factory, "OpenAICompatibleProvider", bomb)
+    monkeypatch.setattr(factory, "OpenAICompatibleEmbeddingProvider", bomb)
     monkeypatch.setattr(factory, "SentenceTransformerEmbeddingProvider", bomb)
 
     bundle = create_provider_bundle(AgentIPCConfig())
@@ -185,6 +186,37 @@ def test_both_optional_provider_paths_can_be_selected_without_network(
     assert embedding_received == {"model_name": "local-test-model"}
 
 
+def test_openai_embedding_options_are_forwarded_without_real_sdk(monkeypatch) -> None:
+    received: dict[str, object] = {}
+    sentinel = object()
+
+    def fake_openai_embedding(**kwargs):
+        received.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(factory, "OpenAICompatibleEmbeddingProvider", fake_openai_embedding)
+
+    bundle = create_provider_bundle(
+        AgentIPCConfig(llm_provider="mock", embedding_provider="openai"),
+        embedding_options={
+            "model": "test-embedding-model",
+            "dim": 1536,
+            "api_key": "test-key",
+            "base_url": "http://localhost:8001/v1",
+            "timeout_sec": 15,
+        },
+    )
+
+    assert bundle.embedding is sentinel
+    assert received == {
+        "model": "test-embedding-model",
+        "dim": 1536,
+        "api_key": "test-key",
+        "base_url": "http://localhost:8001/v1",
+        "timeout_sec": 15,
+    }
+
+
 @pytest.mark.parametrize("options", [None, {}])
 def test_openai_requires_explicit_model(options) -> None:
     with pytest.raises(
@@ -215,6 +247,30 @@ def test_sentence_transformer_requires_explicit_model_name(options) -> None:
         )
 
 
+@pytest.mark.parametrize("options", [None, {}])
+def test_openai_embedding_requires_explicit_model(options) -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"openai embedding provider requires embedding_options\['model'\]",
+    ):
+        create_provider_bundle(
+            AgentIPCConfig(llm_provider="mock", embedding_provider="openai"),
+            embedding_options=options,
+        )
+
+
+@pytest.mark.parametrize("options", [None, {}, {"model": "test-model"}])
+def test_openai_embedding_requires_explicit_dim(options) -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"openai embedding provider requires embedding_options\['dim'\]",
+    ):
+        create_provider_bundle(
+            AgentIPCConfig(llm_provider="mock", embedding_provider="openai"),
+            embedding_options=options,
+        )
+
+
 @pytest.mark.parametrize("provider", ["unknown", "Mock", " openai "])
 def test_unknown_llm_provider_is_rejected(provider: str) -> None:
     with pytest.raises(ValueError, match=provider.strip() or provider):
@@ -237,6 +293,17 @@ def test_unknown_provider_error_lists_allowed_values() -> None:
     message = str(exc_info.value)
     assert "unknown" in message
     assert "mock" in message
+    assert "openai" in message
+
+
+def test_unknown_embedding_provider_error_lists_allowed_values() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        create_provider_bundle(AgentIPCConfig(embedding_provider="unknown"))
+
+    message = str(exc_info.value)
+    assert "unknown" in message
+    assert "hash" in message
+    assert "sentence-transformer" in message
     assert "openai" in message
 
 
@@ -279,6 +346,14 @@ def test_non_string_embedding_option_key_is_rejected() -> None:
             ),
             None,
             {"model_name": "model", "unknown": 1},
+        ),
+        (
+            AgentIPCConfig(
+                llm_provider="mock",
+                embedding_provider="openai",
+            ),
+            None,
+            {"model": "model", "dim": 128, "unknown": 1},
         ),
     ],
 )

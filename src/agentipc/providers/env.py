@@ -6,6 +6,7 @@ providers via environment variables, without deployment-specific logic.
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -170,6 +171,10 @@ def _build_llm_options(
             raise ValueError(
                 f"AGENTIPC_LLM_TIMEOUT_SEC must be a valid number, got {timeout_str!r}"
             ) from exc
+        if not math.isfinite(timeout_sec):
+            raise ValueError("AGENTIPC_LLM_TIMEOUT_SEC must be finite")
+        if timeout_sec <= 0:
+            raise ValueError("AGENTIPC_LLM_TIMEOUT_SEC must be > 0")
         options["timeout_sec"] = timeout_sec
 
     return options
@@ -186,7 +191,21 @@ def _build_embedding_options(
     if provider == "sentence-transformer":
         return _build_sentence_transformer_options(environ)
 
+    if provider == "openai":
+        return _build_openai_embedding_options(environ)
+
     return {}
+
+
+def _parse_positive_int(value: str, var_name: str) -> int:
+    """Parse a positive integer from string, rejecting non-integers."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"{var_name} must be a valid integer, got {value!r}"
+        ) from exc
+    return parsed
 
 
 def _build_hash_options(environ: Mapping[str, str]) -> dict[str, object]:
@@ -195,12 +214,7 @@ def _build_hash_options(environ: Mapping[str, str]) -> dict[str, object]:
 
     if "AGENTIPC_EMBEDDING_DIM" in environ:
         dim_str = environ["AGENTIPC_EMBEDDING_DIM"]
-        try:
-            dim = int(dim_str)
-        except ValueError as exc:
-            raise ValueError(
-                f"AGENTIPC_EMBEDDING_DIM must be a valid integer, got {dim_str!r}"
-            ) from exc
+        dim = _parse_positive_int(dim_str, "AGENTIPC_EMBEDDING_DIM")
         options["dim"] = dim
 
     return options
@@ -231,6 +245,57 @@ def _build_sentence_transformer_options(
         local_files_only_str = environ["AGENTIPC_EMBEDDING_LOCAL_FILES_ONLY"]
         local_files_only = _parse_bool(local_files_only_str)
         options["local_files_only"] = local_files_only
+
+    return options
+
+
+def _build_openai_embedding_options(
+    environ: Mapping[str, str],
+) -> dict[str, object]:
+    """Build OpenAI-compatible embedding options from environment."""
+    options: dict[str, object] = {}
+
+    # Model (passed through, factory will require it)
+    if "AGENTIPC_EMBEDDING_MODEL" in environ:
+        model = environ["AGENTIPC_EMBEDDING_MODEL"]
+        if model == "":
+            raise ValueError("AGENTIPC_EMBEDDING_MODEL must not be empty string")
+        options["model"] = model
+
+    # Dimension (passed through, factory will require it)
+    if "AGENTIPC_EMBEDDING_DIM" in environ:
+        dim_str = environ["AGENTIPC_EMBEDDING_DIM"]
+        dim = _parse_positive_int(dim_str, "AGENTIPC_EMBEDDING_DIM")
+        options["dim"] = dim
+
+    # API key (optional for local servers)
+    if "AGENTIPC_EMBEDDING_API_KEY" in environ:
+        api_key = environ["AGENTIPC_EMBEDDING_API_KEY"]
+        if api_key == "":
+            raise ValueError("AGENTIPC_EMBEDDING_API_KEY must not be empty string")
+        options["api_key"] = api_key
+
+    # Base URL
+    if "AGENTIPC_EMBEDDING_BASE_URL" in environ:
+        base_url = environ["AGENTIPC_EMBEDDING_BASE_URL"]
+        if base_url == "":
+            raise ValueError("AGENTIPC_EMBEDDING_BASE_URL must not be empty string")
+        options["base_url"] = base_url
+
+    # Timeout
+    if "AGENTIPC_EMBEDDING_TIMEOUT_SEC" in environ:
+        timeout_str = environ["AGENTIPC_EMBEDDING_TIMEOUT_SEC"]
+        try:
+            timeout_sec = float(timeout_str)
+        except ValueError as exc:
+            raise ValueError(
+                f"AGENTIPC_EMBEDDING_TIMEOUT_SEC must be a valid number, got {timeout_str!r}"
+            ) from exc
+        if not math.isfinite(timeout_sec):
+            raise ValueError("AGENTIPC_EMBEDDING_TIMEOUT_SEC must be finite")
+        if timeout_sec <= 0:
+            raise ValueError("AGENTIPC_EMBEDDING_TIMEOUT_SEC must be > 0")
+        options["timeout_sec"] = timeout_sec
 
     return options
 

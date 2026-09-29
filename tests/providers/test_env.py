@@ -167,6 +167,31 @@ def test_api_key_not_in_config_dump(monkeypatch) -> None:
     assert "api_key" not in config_dict
 
 
+def test_embedding_api_key_not_in_config_dump(monkeypatch) -> None:
+    """Embedding API keys must not appear in AgentIPCConfig serialization."""
+    sentinel = object()
+
+    def fake_openai_embedding(**kwargs):
+        return sentinel
+
+    monkeypatch.setattr(factory, "OpenAICompatibleEmbeddingProvider", fake_openai_embedding)
+
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_MODEL": "test-model",
+        "AGENTIPC_EMBEDDING_DIM": "128",
+        "AGENTIPC_EMBEDDING_API_KEY": "super-secret-embedding-key",
+    }
+
+    resolved = create_provider_bundle_from_env(environ=environ)
+
+    config_dict = resolved.config.model_dump()
+    config_str = str(config_dict)
+
+    assert "super-secret-embedding-key" not in config_str
+    assert "api_key" not in config_dict
+
+
 def test_irrelevant_openai_env_ignored_in_mock_mode() -> None:
     """Mock mode ignores OpenAI environment variables."""
     environ = {
@@ -283,6 +308,67 @@ def test_sentence_transformer_full_config(monkeypatch) -> None:
     }
 
 
+def test_cloud_openai_embedding_endpoint(monkeypatch) -> None:
+    """Cloud OpenAI-compatible embedding provider with full configuration."""
+    received_kwargs: dict[str, object] = {}
+    sentinel = object()
+
+    def fake_openai_embedding(**kwargs):
+        received_kwargs.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(factory, "OpenAICompatibleEmbeddingProvider", fake_openai_embedding)
+
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_MODEL": "cloud-embedding-model",
+        "AGENTIPC_EMBEDDING_DIM": "1536",
+        "AGENTIPC_EMBEDDING_API_KEY": "cloud-secret",
+        "AGENTIPC_EMBEDDING_BASE_URL": "https://api.example.test/v1",
+        "AGENTIPC_EMBEDDING_TIMEOUT_SEC": "15",
+    }
+
+    resolved = create_provider_bundle_from_env(environ=environ)
+
+    assert resolved.bundle.embedding is sentinel
+    assert received_kwargs == {
+        "model": "cloud-embedding-model",
+        "dim": 1536,
+        "api_key": "cloud-secret",
+        "base_url": "https://api.example.test/v1",
+        "timeout_sec": 15.0,
+    }
+
+
+def test_local_openai_embedding_endpoint_without_key(monkeypatch) -> None:
+    """Local OpenAI-compatible embedding server without API key."""
+    received_kwargs: dict[str, object] = {}
+    sentinel = object()
+
+    def fake_openai_embedding(**kwargs):
+        received_kwargs.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(factory, "OpenAICompatibleEmbeddingProvider", fake_openai_embedding)
+
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_MODEL": "local-embedding-model",
+        "AGENTIPC_EMBEDDING_DIM": "1024",
+        "AGENTIPC_EMBEDDING_BASE_URL": "http://127.0.0.1:8001/v1",
+    }
+
+    resolved = create_provider_bundle_from_env(environ=environ)
+
+    assert resolved.bundle.embedding is sentinel
+    assert received_kwargs == {
+        "model": "local-embedding-model",
+        "dim": 1024,
+        "base_url": "http://127.0.0.1:8001/v1",
+    }
+    assert "api_key" not in received_kwargs
+
+
 @pytest.mark.parametrize(
     "value,expected",
     [
@@ -357,6 +443,40 @@ def test_missing_openai_model_fails_at_factory(monkeypatch) -> None:
         create_provider_bundle_from_env(environ=environ)
 
 
+def test_missing_openai_embedding_model_fails_at_factory(monkeypatch) -> None:
+    """Missing model for openai embedding provider fails in existing factory."""
+    monkeypatch.setattr(
+        factory,
+        "OpenAICompatibleEmbeddingProvider",
+        lambda **kwargs: object(),
+    )
+
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_DIM": "128",
+    }
+
+    with pytest.raises(ValueError, match="openai embedding provider requires embedding_options"):
+        create_provider_bundle_from_env(environ=environ)
+
+
+def test_missing_openai_embedding_dim_fails_at_factory(monkeypatch) -> None:
+    """Missing dim for openai embedding provider fails in existing factory."""
+    monkeypatch.setattr(
+        factory,
+        "OpenAICompatibleEmbeddingProvider",
+        lambda **kwargs: object(),
+    )
+
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_MODEL": "test-model",
+    }
+
+    with pytest.raises(ValueError, match="openai embedding provider requires embedding_options"):
+        create_provider_bundle_from_env(environ=environ)
+
+
 def test_empty_llm_provider_env_fails() -> None:
     """Empty AGENTIPC_LLM_PROVIDER must fail."""
     environ = {"AGENTIPC_LLM_PROVIDER": ""}
@@ -416,6 +536,77 @@ def test_bad_embedding_dim_fails() -> None:
     }
 
     with pytest.raises(ValueError, match="AGENTIPC_EMBEDDING_DIM must be a valid integer"):
+        create_provider_bundle_from_env(environ=environ)
+
+
+def test_empty_embedding_model_fails() -> None:
+    """Empty AGENTIPC_EMBEDDING_MODEL must fail."""
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_MODEL": "",
+        "AGENTIPC_EMBEDDING_DIM": "128",
+    }
+
+    with pytest.raises(ValueError, match="AGENTIPC_EMBEDDING_MODEL must not be empty"):
+        create_provider_bundle_from_env(environ=environ)
+
+
+def test_empty_embedding_api_key_fails() -> None:
+    """Empty AGENTIPC_EMBEDDING_API_KEY must fail."""
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_MODEL": "test-model",
+        "AGENTIPC_EMBEDDING_DIM": "128",
+        "AGENTIPC_EMBEDDING_API_KEY": "",
+    }
+
+    with pytest.raises(ValueError, match="AGENTIPC_EMBEDDING_API_KEY must not be empty"):
+        create_provider_bundle_from_env(environ=environ)
+
+
+def test_empty_embedding_base_url_fails() -> None:
+    """Empty AGENTIPC_EMBEDDING_BASE_URL must fail."""
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_MODEL": "test-model",
+        "AGENTIPC_EMBEDDING_DIM": "128",
+        "AGENTIPC_EMBEDDING_BASE_URL": "",
+    }
+
+    with pytest.raises(ValueError, match="AGENTIPC_EMBEDDING_BASE_URL must not be empty"):
+        create_provider_bundle_from_env(environ=environ)
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    ["not-a-number", "abc", "1.5", "0", "-1"],
+)
+def test_bad_embedding_dim_values_fail(bad_value: str) -> None:
+    """Invalid AGENTIPC_EMBEDDING_DIM values must fail."""
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_MODEL": "test-model",
+        "AGENTIPC_EMBEDDING_DIM": bad_value,
+    }
+
+    with pytest.raises(ValueError):
+        create_provider_bundle_from_env(environ=environ)
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    ["not-a-number", "abc", "0", "-1", "nan", "inf"],
+)
+def test_bad_embedding_timeout_values_fail(bad_value: str) -> None:
+    """Invalid AGENTIPC_EMBEDDING_TIMEOUT_SEC values must fail."""
+    environ = {
+        "AGENTIPC_EMBEDDING_PROVIDER": "openai",
+        "AGENTIPC_EMBEDDING_MODEL": "test-model",
+        "AGENTIPC_EMBEDDING_DIM": "128",
+        "AGENTIPC_EMBEDDING_TIMEOUT_SEC": bad_value,
+    }
+
+    with pytest.raises(ValueError):
         create_provider_bundle_from_env(environ=environ)
 
 
