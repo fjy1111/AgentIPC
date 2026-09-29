@@ -141,6 +141,12 @@ def test_real_metrics_snapshot_dump_is_accepted() -> None:
         "memory_harmful",
         "tool_call_count",
         "repeated_tool_call_count",
+        "llm_call_count",
+        "llm_prompt_tokens",
+        "llm_completion_tokens",
+        "llm_total_tokens",
+        "llm_usage_missing_count",
+        "llm_latency_ms",
         "latency_ms",
         "success",
     }
