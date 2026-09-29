@@ -91,8 +91,12 @@ def read_raw_records(
             # Skip blank lines
             continue
 
-        # Parse and validate each line as RawRunRecord
-        record = RawRunRecord.model_validate_json(stripped)
+        # Two-stage parsing to distinguish malformed JSON from invalid schema
+        # Stage 1: Parse JSON (raises json.JSONDecodeError if malformed)
+        payload = json.loads(stripped)
+
+        # Stage 2: Validate schema (raises pydantic.ValidationError if invalid)
+        record = RawRunRecord.model_validate(payload)
         records.append(record)
 
     return records
