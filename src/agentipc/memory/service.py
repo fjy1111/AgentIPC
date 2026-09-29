@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from agentipc.memory.models import MemoryRecord
+from agentipc.memory.models import MemoryRecord, MemoryType
 from agentipc.memory.scoring import (
     keyword_overlap_score,
     semantic_scores,
@@ -114,25 +114,31 @@ class MemoryService:
             vector_index=self.vector_index,
         )
 
-        scored: list[tuple[float, MemoryRecord]] = []
+        scored: list[tuple[bool, float, MemoryRecord]] = []
         for record in records:
             semantic = semantic_map.get(record.memory_id, 0.0)
             keyword = keyword_overlap_score(query_keywords, record.keywords)
             tag = tag_overlap_score(query_tags, record.tags)
             score = 0.60 * semantic + 0.25 * keyword + 0.15 * tag
-            if score > 0.0:
-                scored.append((score, record))
+            exact_task_result = (
+                record.memory_type is MemoryType.RESULT
+                and record.task_topic == query
+            )
+            if exact_task_result or score > 0.0:
+                scored.append((exact_task_result, score, record))
 
-        scored.sort(key=lambda item: (-item[0], item[1].memory_id))
+        scored.sort(
+            key=lambda item: (-int(item[0]), -item[1], item[2].memory_id)
+        )
 
         return [
             MemoryRef(
                 memory_id=record.memory_id,
                 score=score,
-                match_type="hybrid",
+                match_type="exact_task" if exact_task_result else "hybrid",
                 summary=record.summary,
             )
-            for score, record in scored[:top_k]
+            for exact_task_result, score, record in scored[:top_k]
         ]
 
     def mark_used(

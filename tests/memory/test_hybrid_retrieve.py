@@ -23,14 +23,23 @@ class MappingEmbeddingProvider:
         return np.array([self.mapping.get(text, [0.0] * self.dim) for text in texts], dtype=np.float32)
 
 
-def make_record(memory_id: str, summary: str, *, keywords=None, tags=None, embedding=None) -> MemoryRecord:
+def make_record(
+    memory_id: str,
+    summary: str,
+    *,
+    task_topic="topic",
+    memory_type=MemoryType.RESULT,
+    keywords=None,
+    tags=None,
+    embedding=None,
+) -> MemoryRecord:
     return MemoryRecord(
         memory_id=memory_id,
         source_agent="summarizer",
         created_at=100.0,
-        task_topic="topic",
+        task_topic=task_topic,
         summary=summary,
-        memory_type=MemoryType.RESULT,
+        memory_type=memory_type,
         keywords=[] if keywords is None else keywords,
         tags=[] if tags is None else tags,
         embedding=embedding,
@@ -104,6 +113,91 @@ def test_zero_score_records_are_excluded_and_no_matches_returns_empty(tmp_path) 
     try:
         service.write(make_record("zero", "unrelated"))
         assert service.retrieve("Q", top_k=5) == []
+    finally:
+        store.close()
+
+
+def test_zero_score_exact_task_result_is_included(tmp_path) -> None:
+    store, service = build_service(
+        tmp_path,
+        {"exact-query": [1.0, 0.0], "unrelated": [0.0, 1.0]},
+    )
+    try:
+        service.write(
+            make_record(
+                "exact",
+                "unrelated",
+                task_topic="exact-query",
+            )
+        )
+
+        refs = service.retrieve("exact-query")
+
+        assert len(refs) == 1
+        assert refs[0].memory_id == "exact"
+        assert refs[0].score == pytest.approx(0.0)
+        assert refs[0].match_type == "exact_task"
+    finally:
+        store.close()
+
+
+def test_exact_task_result_has_priority_before_top_k(tmp_path) -> None:
+    store, service = build_service(
+        tmp_path,
+        {
+            "exact-query": [1.0, 0.0],
+            "exact-unrelated": [0.0, 1.0],
+            "high-hybrid": [1.0, 0.0],
+        },
+    )
+    try:
+        service.write(
+            make_record(
+                "A",
+                "exact-unrelated",
+                task_topic="exact-query",
+            )
+        )
+        service.write(
+            make_record(
+                "B",
+                "high-hybrid",
+                task_topic="other-query",
+                keywords=["kw"],
+                tags=["tag"],
+            )
+        )
+
+        refs = service.retrieve(
+            "exact-query",
+            keywords=["kw"],
+            tags=["tag"],
+            top_k=1,
+        )
+
+        assert [ref.memory_id for ref in refs] == ["A"]
+        assert refs[0].score == pytest.approx(0.0)
+        assert refs[0].match_type == "exact_task"
+    finally:
+        store.close()
+
+
+def test_zero_score_exact_task_non_result_is_not_included(tmp_path) -> None:
+    store, service = build_service(
+        tmp_path,
+        {"exact-query": [1.0, 0.0], "unrelated": [0.0, 1.0]},
+    )
+    try:
+        service.write(
+            make_record(
+                "evidence",
+                "unrelated",
+                task_topic="exact-query",
+                memory_type=MemoryType.EVIDENCE,
+            )
+        )
+
+        assert service.retrieve("exact-query") == []
     finally:
         store.close()
 
