@@ -67,16 +67,19 @@ def _build_deterministic_context(
 ) -> RunContext:
     """Build a RunContext with deterministic IDs for reproducibility testing.
 
-    Uses deterministic trace_id and task_id based on suite_id, experiment,
-    task_index, run_index, and seed to enable comparison across independent runs.
+    Logical IDs (trace_id, task_id) are identical across independent suites
+    for the same logical run (experiment, task_index, run_index, seed).
+
+    suite_id is used only for physical isolation of storage paths
+    (trace files, artifacts, memory databases).
     """
     exp_name = experiment.name.value
 
-    # Deterministic IDs for comparison
-    trace_id = f"trace-{suite_id}-{exp_name}-{task_index}-{run_index}-{seed}"
-    task_id = f"task-{suite_id}-{exp_name}-{task_index}-{run_index}-{seed}"
+    # Logical IDs: identical across suites for same logical run
+    trace_id = f"trace-{exp_name}-{task_index}-{run_index}-{seed}"
+    task_id = f"task-{exp_name}-{task_index}-{run_index}-{seed}"
 
-    # Fresh infrastructure per run
+    # Physical paths: suite_id isolates storage
     trace_path = tmp_root / f"trace_{suite_id}_{exp_name}_{task_index}_{run_index}_{seed}.jsonl"
 
     return RunContext(
@@ -339,11 +342,21 @@ class TestSummaryReproducibility:
                     continue  # Skip timing metric
 
                 stats2 = exp2.metrics[metric_name]
-                assert stats1.count == stats2.count
-                assert stats1.mean == stats2.mean
-                assert stats1.std == stats2.std
-                assert stats1.min == stats2.min
-                assert stats1.max == stats2.max
+                assert stats1.count == stats2.count, (
+                    f"{exp_name}.{metric_name}.count: {stats1.count} != {stats2.count}"
+                )
+                assert stats1.mean == stats2.mean, (
+                    f"{exp_name}.{metric_name}.mean: {stats1.mean} != {stats2.mean}"
+                )
+                assert stats1.std == stats2.std, (
+                    f"{exp_name}.{metric_name}.std: {stats1.std} != {stats2.std}"
+                )
+                assert stats1.min == stats2.min, (
+                    f"{exp_name}.{metric_name}.min: {stats1.min} != {stats2.min}"
+                )
+                assert stats1.max == stats2.max, (
+                    f"{exp_name}.{metric_name}.max: {stats1.max} != {stats2.max}"
+                )
 
         # Derived metrics must match (except latency_improvement_rate)
         for derived_key in ["B_vs_A", "C_vs_B", "D_vs_C"]:

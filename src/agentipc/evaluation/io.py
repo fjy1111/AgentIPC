@@ -351,6 +351,9 @@ def summarize_raw_records(
     # Aggregate each experiment
     experiment_summaries: dict[str, ExperimentSummary] = {}
 
+    # Track exact memory totals for derived metrics (cannot use count * int(mean))
+    memory_totals: dict[str, tuple[int, int]] = {}
+
     for exp_name in ["A", "B", "C", "D"]:
         exp_records = by_experiment[exp_name]
 
@@ -360,6 +363,10 @@ def summarize_raw_records(
 
         # Collect numeric metric values for aggregation
         metric_values: dict[str, list[int | float]] = {}
+
+        # Exact totals for memory metrics
+        memory_used_total = 0
+        memory_effective_total = 0
 
         for record in exp_records:
             # Validate metrics schema
@@ -415,6 +422,10 @@ def summarize_raw_records(
                     metric_values[metric_name] = []
                 metric_values[metric_name].append(value)
 
+            # Accumulate exact memory totals for derived metrics
+            memory_used_total += metrics_snapshot.memory_used
+            memory_effective_total += metrics_snapshot.memory_effective
+
         # Aggregate each numeric metric
         aggregated_metrics: dict[str, AggregateStats] = {}
         for metric_name, values in metric_values.items():
@@ -440,6 +451,9 @@ def summarize_raw_records(
             metrics=aggregated_metrics,
         )
 
+        # Store exact memory totals for derived metrics computation
+        memory_totals[exp_name] = (memory_used_total, memory_effective_total)
+
     # Compute derived metrics for adjacent ablations
     derived_metrics: dict[str, DerivedMetrics] = {}
 
@@ -447,18 +461,24 @@ def summarize_raw_records(
     derived_metrics["B_vs_A"] = _compute_adjacent_derived(
         baseline=experiment_summaries["A"],
         candidate=experiment_summaries["B"],
+        candidate_memory_used_total=memory_totals["B"][0],
+        candidate_memory_effective_total=memory_totals["B"][1],
     )
 
     # C vs B: + State
     derived_metrics["C_vs_B"] = _compute_adjacent_derived(
         baseline=experiment_summaries["B"],
         candidate=experiment_summaries["C"],
+        candidate_memory_used_total=memory_totals["C"][0],
+        candidate_memory_effective_total=memory_totals["C"][1],
     )
 
     # D vs C: + Memory
     derived_metrics["D_vs_C"] = _compute_adjacent_derived(
         baseline=experiment_summaries["C"],
         candidate=experiment_summaries["D"],
+        candidate_memory_used_total=memory_totals["D"][0],
+        candidate_memory_effective_total=memory_totals["D"][1],
     )
 
     # Build final summary
@@ -475,12 +495,16 @@ def _compute_adjacent_derived(
     *,
     baseline: ExperimentSummary,
     candidate: ExperimentSummary,
+    candidate_memory_used_total: int,
+    candidate_memory_effective_total: int,
 ) -> DerivedMetrics:
     """Compute derived metrics for one adjacent ablation comparison.
 
     Args:
         baseline: The baseline experiment summary
         candidate: The candidate experiment summary
+        candidate_memory_used_total: Exact sum of memory_used from all candidate runs
+        candidate_memory_effective_total: Exact sum of memory_effective from all candidate runs
 
     Returns:
         DerivedMetrics with computed comparison rates
@@ -498,15 +522,7 @@ def _compute_adjacent_derived(
     baseline_repeated_work = baseline.metrics["repeated_tool_call_count"].mean
     candidate_repeated_work = candidate.metrics["repeated_tool_call_count"].mean
 
-    # Memory metrics use totals, not means
-    # Sum across all runs in candidate experiment
-    memory_used = candidate.metrics["memory_used"].count * int(
-        candidate.metrics["memory_used"].mean
-    )
-    memory_effective = candidate.metrics["memory_effective"].count * int(
-        candidate.metrics["memory_effective"].mean
-    )
-
+    # Memory metrics use exact totals from validated runs (not count * int(mean))
     return compute_derived_metrics(
         baseline_tokens=baseline_tokens,
         candidate_tokens=candidate_tokens,
@@ -516,8 +532,8 @@ def _compute_adjacent_derived(
         candidate_latency_ms=candidate_latency_ms,
         baseline_repeated_work=baseline_repeated_work,
         candidate_repeated_work=candidate_repeated_work,
-        memory_used=memory_used,
-        memory_effective=memory_effective,
+        memory_used=candidate_memory_used_total,
+        memory_effective=candidate_memory_effective_total,
     )
 
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from agentipc.evaluation.derived import DerivedMetrics
 from agentipc.evaluation.experiment import (
@@ -108,7 +110,7 @@ class TestExperimentSummaryModel:
 
     def test_success_rate_out_of_range_rejected(self):
         """success_rate > 1.0 is rejected."""
-        with pytest.raises(ValueError, match="success_rate must be in"):
+        with pytest.raises(ValidationError):
             ExperimentSummary(
                 experiment=ExperimentName.A,
                 run_count=10,
@@ -364,7 +366,7 @@ class TestSummarizeRawRecords:
 
     def test_seed_count_correct(self):
         """seed_count reflects unique seeds."""
-        task_hash = "g" * 64
+        task_hash = _task_hash("seed-count")
         records = []
 
         # 1 task × 4 experiments × 3 seeds
@@ -382,7 +384,7 @@ class TestFairnessValidation:
 
     def test_missing_experiment_rejected(self):
         """Missing B experiment is rejected."""
-        task_hash = "h" * 64
+        task_hash = _task_hash("missing-experiment")
         records = []
 
         # Only A, C, D
@@ -397,18 +399,18 @@ class TestFairnessValidation:
         records = []
 
         # A uses one task_hash
-        records.append(_build_raw_record("A", "task1", "a" * 64, 42))
+        records.append(_build_raw_record("A", "task1", _task_hash("task-a"), 42))
 
         # B/C/D use different task_hash
         for exp_name in ["B", "C", "D"]:
-            records.append(_build_raw_record(exp_name, "task1", "b" * 64, 42))
+            records.append(_build_raw_record(exp_name, "task1", _task_hash("task-b"), 42))
 
         with pytest.raises(ValueError, match="Fairness violation"):
             summarize_raw_records(records)
 
     def test_seed_mismatch_rejected(self):
         """Different seeds between experiments is rejected."""
-        task_hash = "i" * 64
+        task_hash = _task_hash("seed-mismatch")
         records = []
 
         # A uses seeds 42, 43
@@ -433,7 +435,7 @@ class TestMetricsValidation:
 
     def test_invalid_metrics_schema_rejected(self):
         """Invalid metrics schema is rejected."""
-        task_hash = "j" * 64
+        task_hash = _task_hash("invalid-metrics")
         record = _build_raw_record("A", "task1", task_hash, 42)
 
         # Corrupt metrics
@@ -448,7 +450,7 @@ class TestMetricsValidation:
 
     def test_success_mismatch_rejected(self):
         """Metrics success != run_result.success is rejected."""
-        task_hash = "k" * 64
+        task_hash = _task_hash("success-mismatch")
         record = _build_raw_record("A", "task1", task_hash, 42, success=True)
 
         # Corrupt: metrics says success=False but run_result says success=True
@@ -479,6 +481,59 @@ class TestInputValidation:
         """Non-RawRunRecord item is rejected."""
         with pytest.raises(TypeError, match="records\\[0\\] must be a RawRunRecord"):
             summarize_raw_records([{"not": "a RawRunRecord"}])  # type: ignore[list-item]
+
+
+class TestExactMemoryTotals:
+    """Test that memory totals are exact sums, not count * int(mean)."""
+
+    def test_exact_memory_totals_in_derived_metrics(self):
+        """Memory effective hit rate uses exact totals, not count * int(mean)."""
+        task_hash = _task_hash("memory-totals")
+        records = []
+
+        # A/B/C with no memory (baseline experiments)
+        for exp_name in ["A", "B", "C"]:
+            records.append(_build_raw_record(exp_name, "task1", task_hash, 42))
+            records.append(_build_raw_record(exp_name, "task1", task_hash, 43))
+
+        # D with non-uniform memory usage across seeds
+        # seed 42: memory_used=1, memory_effective=1
+        records.append(
+            _build_raw_record(
+                "D",
+                "task1",
+                task_hash,
+                42,
+                memory_used=1,
+                memory_effective=1,
+            )
+        )
+
+        # seed 43: memory_used=2, memory_effective=1
+        records.append(
+            _build_raw_record(
+                "D",
+                "task1",
+                task_hash,
+                43,
+                memory_used=2,
+                memory_effective=1,
+            )
+        )
+
+        summary = summarize_raw_records(records)
+
+        # D experiment totals
+        # memory_used: 1 + 2 = 3
+        # memory_effective: 1 + 1 = 2
+        # effective_hit_rate = 2 / 3
+
+        # If using count * int(mean), would get:
+        # mean(memory_used) = 1.5
+        # count * int(1.5) = 2 * 1 = 2 (WRONG, should be 3)
+
+        d_vs_c = summary.derived["D_vs_C"]
+        assert d_vs_c.effective_hit_rate == pytest.approx(2 / 3)
 
 
 class TestWriteSummary:
@@ -782,3 +837,8 @@ class TestWriteSummary:
         """Non-BenchmarkSummary summary is rejected."""
         with pytest.raises(TypeError, match="summary must be a BenchmarkSummary"):
             write_summary(tmp_path / "summary.json", {"not": "a summary"})  # type: ignore[arg-type]
+
+
+def _task_hash(label: str) -> str:
+    """Generate a valid SHA-256 task hash from a label for test fixtures."""
+    return hashlib.sha256(label.encode("utf-8")).hexdigest()
