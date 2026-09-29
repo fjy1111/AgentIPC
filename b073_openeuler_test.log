@@ -1,0 +1,60 @@
+.......................F                                                                                                                                 [100%]
+=========================================================================== FAILURES ===========================================================================
+______________________________________________________________ test_full_10_round_knowledge_chain ______________________________________________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-fjy/pytest-67/test_full_10_round_knowledge_c0')
+
+    def test_full_10_round_knowledge_chain(tmp_path: Path) -> None:
+        tasks = load_knowledge_tasks(REAL_TASKS_PATH)
+        documents = load_knowledge_documents(REAL_KNOWLEDGE_ROOT)
+    
+        assert len(tasks) == 10
+        assert [task.round for task in tasks] == list(range(1, 11))
+        assert len(documents) == 4
+        assert tasks[7].query == tasks[1].query
+        assert tasks[8].query == tasks[2].query
+    
+        work_root = tmp_path / "knowledge-10round"
+        results = run_knowledge_chain(
+            tasks=tasks,
+            documents=documents,
+            work_root=work_root,
+            config=AgentIPCConfig(
+                llm_provider="mock",
+                embedding_provider="hash",
+                random_seed=42,
+            ),
+            provider_bundle=_provider_bundle(tasks),
+        )
+    
+        assert len(results) == 10
+        for result in results:
+            assert result.run_record.run_result.success is True
+            assert result.evaluation.success is True
+            assert result.run_record.experiment == EXPERIMENT_D
+            assert result.run_record.use_sandbox is False
+            assert result.run_record.run_result.error is None
+    
+        assert sum(
+            result.run_record.run_result.metrics["memory_retrieved"]
+            for result in results
+        ) > 0
+    
+        round8 = results[7]
+        round9 = results[8]
+    
+        assert round8.task.query == results[1].task.query
+        assert round8.run_record.run_result.metrics["memory_retrieved"] > 0
+        assert round8.run_record.run_result.metrics["memory_used"] == 1
+        assert round8.run_record.run_result.metrics["memory_effective"] == 1
+        assert round8.run_record.run_result.metrics["memory_harmful"] == 0
+    
+        assert round9.task.query == results[2].task.query
+        assert round9.run_record.run_result.metrics["memory_retrieved"] > 0
+>       assert round9.run_record.run_result.metrics["memory_used"] == 1
+E       assert 0 == 1
+
+tests/scenarios/test_knowledge_chain_10round.py:82: AssertionError
+=================================================================== short test summary info ====================================================================
+FAILED tests/scenarios/test_knowledge_chain_10round.py::test_full_10_round_knowledge_chain - assert 0 == 1
+1 failed, 23 passed in 0.56s

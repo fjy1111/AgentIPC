@@ -135,7 +135,7 @@ class MemoryService:
             MemoryRef(
                 memory_id=record.memory_id,
                 score=score,
-                match_type="exact_task" if exact_task_result else "hybrid",
+                match_type="exact_task" if exact_task_result and score == 0.0 else "hybrid",
                 summary=record.summary,
             )
             for exact_task_result, score, record in scored[:top_k]
