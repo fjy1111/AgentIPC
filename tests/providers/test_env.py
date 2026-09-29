@@ -31,7 +31,7 @@ def test_default_config_when_none_provided() -> None:
     assert isinstance(resolved.bundle.llm, MockLLMProvider)
 
 
-def test_original_config_unchanged_after_env_override() -> None:
+def test_original_config_unchanged_after_env_override(monkeypatch) -> None:
     """Environment overrides should not mutate the original config."""
     original = AgentIPCConfig()
     assert original.llm_provider == "mock"
@@ -47,22 +47,15 @@ def test_original_config_unchanged_after_env_override() -> None:
     def fake_openai(**kwargs):
         return sentinel
 
-    import agentipc.providers.env as env_module
+    monkeypatch.setattr(factory, "OpenAICompatibleProvider", fake_openai)
 
-    original_factory_module = env_module.create_provider_bundle.__globals__["factory"]
-    original_openai_class = original_factory_module.OpenAICompatibleProvider
+    resolved = create_provider_bundle_from_env(config=original, environ=environ)
 
-    try:
-        original_factory_module.OpenAICompatibleProvider = fake_openai
-        resolved = create_provider_bundle_from_env(config=original, environ=environ)
+    # Resolved config reflects env override
+    assert resolved.config.llm_provider == "openai"
 
-        # Resolved config reflects env override
-        assert resolved.config.llm_provider == "openai"
-
-        # Original config unchanged
-        assert original.llm_provider == "mock"
-    finally:
-        original_factory_module.OpenAICompatibleProvider = original_openai_class
+    # Original config unchanged
+    assert original.llm_provider == "mock"
 
 
 def test_cloud_openai_endpoint(monkeypatch) -> None:
@@ -188,7 +181,7 @@ def test_irrelevant_openai_env_ignored_in_mock_mode() -> None:
     assert isinstance(resolved.bundle.llm, MockLLMProvider)
 
 
-def test_llm_provider_env_override() -> None:
+def test_llm_provider_env_override(monkeypatch) -> None:
     """AGENTIPC_LLM_PROVIDER overrides config.llm_provider."""
     config = AgentIPCConfig(llm_provider="mock")
 
@@ -202,21 +195,15 @@ def test_llm_provider_env_override() -> None:
     def fake_openai(**kwargs):
         return sentinel
 
-    import agentipc.providers.env as env_module
+    monkeypatch.setattr(factory, "OpenAICompatibleProvider", fake_openai)
 
-    original_factory_module = env_module.create_provider_bundle.__globals__["factory"]
-    original_openai_class = original_factory_module.OpenAICompatibleProvider
+    resolved = create_provider_bundle_from_env(config=config, environ=environ)
 
-    try:
-        original_factory_module.OpenAICompatibleProvider = fake_openai
-        resolved = create_provider_bundle_from_env(config=config, environ=environ)
-
-        assert resolved.config.llm_provider == "openai"
-    finally:
-        original_factory_module.OpenAICompatibleProvider = original_openai_class
+    assert resolved.config.llm_provider == "openai"
+    assert resolved.bundle.llm is sentinel
 
 
-def test_embedding_provider_env_override() -> None:
+def test_embedding_provider_env_override(monkeypatch) -> None:
     """AGENTIPC_EMBEDDING_PROVIDER overrides config.embedding_provider."""
     config = AgentIPCConfig(embedding_provider="hash")
 
@@ -230,20 +217,16 @@ def test_embedding_provider_env_override() -> None:
     def fake_sentence_transformer(**kwargs):
         return sentinel
 
-    import agentipc.providers.env as env_module
+    monkeypatch.setattr(
+        factory,
+        "SentenceTransformerEmbeddingProvider",
+        fake_sentence_transformer,
+    )
 
-    original_factory_module = env_module.create_provider_bundle.__globals__["factory"]
-    original_st_class = original_factory_module.SentenceTransformerEmbeddingProvider
+    resolved = create_provider_bundle_from_env(config=config, environ=environ)
 
-    try:
-        original_factory_module.SentenceTransformerEmbeddingProvider = (
-            fake_sentence_transformer
-        )
-        resolved = create_provider_bundle_from_env(config=config, environ=environ)
-
-        assert resolved.config.embedding_provider == "sentence-transformer"
-    finally:
-        original_factory_module.SentenceTransformerEmbeddingProvider = original_st_class
+    assert resolved.config.embedding_provider == "sentence-transformer"
+    assert resolved.bundle.embedding is sentinel
 
 
 def test_hash_embedding_dim_option(monkeypatch) -> None:

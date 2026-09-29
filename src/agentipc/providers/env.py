@@ -11,7 +11,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from agentipc.config import AgentIPCConfig
-from agentipc.providers.factory import ProviderBundle, create_provider_bundle
+from agentipc.providers import factory
+from agentipc.providers.factory import ProviderBundle
 
 
 @dataclass(frozen=True)
@@ -104,7 +105,7 @@ def create_provider_bundle_from_env(
     embedding_options = _build_embedding_options(embedding_provider, environ)
 
     # Construct providers via existing factory
-    bundle = create_provider_bundle(
+    bundle = factory.create_provider_bundle(
         resolved_config,
         llm_options=llm_options,
         embedding_options=embedding_options,
