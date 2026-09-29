@@ -1,0 +1,5 @@
+[
+  {"name":"gateway","status":"running","port":8080},
+  {"name":"worker","status":"running","port":9000},
+  {"name":"legacy","status":"stopped","port":7000}
+]

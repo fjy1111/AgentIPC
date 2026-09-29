@@ -1,0 +1,255 @@
+[
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 1,
+    "description": "统计 requests.csv 中 requests 总数。",
+    "code": "import csv\nimport io\nimport json\n\nrows = csv.DictReader(io.StringIO(INPUT_ARTIFACTS[\"data/requests.csv\"]))\nresult = sum(int(row[\"requests\"]) for row in rows)\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/requests.csv"
+    ],
+    "expected": {
+      "result": 350
+    },
+    "reuse_hint": {
+      "source_rounds": [],
+      "topics": [
+        "requests",
+        "aggregate"
+      ],
+      "expected_reuse": false
+    }
+  },
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 2,
+    "description": "聚合 api service 的 requests 和 errors。",
+    "code": "import csv\nimport io\nimport json\n\nrows = csv.DictReader(io.StringIO(INPUT_ARTIFACTS[\"data/requests.csv\"]))\napi_rows = [row for row in rows if row[\"service\"] == \"api\"]\nresult = {\n    \"errors\": sum(int(row[\"errors\"]) for row in api_rows),\n    \"requests\": sum(int(row[\"requests\"]) for row in api_rows),\n}\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/requests.csv"
+    ],
+    "expected": {
+      "result": {
+        "errors": 14,
+        "requests": 200
+      }
+    },
+    "reuse_hint": {
+      "source_rounds": [
+        1
+      ],
+      "topics": [
+        "requests",
+        "api"
+      ],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 3,
+    "description": "列出 services.json 中 running service names。",
+    "code": "import json\n\nservices = json.loads(INPUT_ARTIFACTS[\"data/services.json\"])\nresult = [item[\"name\"] for item in services if item[\"status\"] == \"running\"]\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/services.json"
+    ],
+    "expected": {
+      "result": [
+        "gateway",
+        "worker"
+      ]
+    },
+    "reuse_hint": {
+      "source_rounds": [],
+      "topics": [
+        "services",
+        "running"
+      ],
+      "expected_reuse": false
+    }
+  },
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 4,
+    "description": "统计 access.log 中 HTTP status >= 500 的记录数。",
+    "code": "import json\n\nlines = INPUT_ARTIFACTS[\"data/access.log\"].splitlines()\nresult = sum(1 for line in lines if line and int(line.split()[-2]) >= 500)\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/access.log"
+    ],
+    "expected": {
+      "result": 2
+    },
+    "reuse_hint": {
+      "source_rounds": [],
+      "topics": [
+        "access",
+        "server-error"
+      ],
+      "expected_reuse": false
+    }
+  },
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 5,
+    "description": "读取 thresholds.conf 为结构化配置。",
+    "code": "import json\n\nresult = {}\nfor line in INPUT_ARTIFACTS[\"data/thresholds.conf\"].splitlines():\n    if not line:\n        continue\n    key, value = line.split(\"=\", 1)\n    if key == \"error_rate_warn\":\n        result[key] = float(value)\n    elif key == \"latency_warn_ms\":\n        result[key] = int(value)\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/thresholds.conf"
+    ],
+    "expected": {
+      "result": {
+        "error_rate_warn": 0.05,
+        "latency_warn_ms": 200
+      }
+    },
+    "reuse_hint": {
+      "source_rounds": [],
+      "topics": [
+        "thresholds",
+        "config"
+      ],
+      "expected_reuse": false
+    }
+  },
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 6,
+    "description": "使用 requests.csv 和 thresholds.conf，找出 error rate 严格大于 error_rate_warn 的 service。",
+    "code": "import csv\nimport io\nimport json\n\nthresholds = {}\nfor line in INPUT_ARTIFACTS[\"data/thresholds.conf\"].splitlines():\n    if line:\n        key, value = line.split(\"=\", 1)\n        thresholds[key] = float(value) if key == \"error_rate_warn\" else int(value)\n\nrows = csv.DictReader(io.StringIO(INPUT_ARTIFACTS[\"data/requests.csv\"]))\naggregate = {}\nfor row in rows:\n    service = row[\"service\"]\n    current = aggregate.setdefault(service, {\"requests\": 0, \"errors\": 0})\n    current[\"requests\"] += int(row[\"requests\"])\n    current[\"errors\"] += int(row[\"errors\"])\n\nwarn = thresholds[\"error_rate_warn\"]\nresult = sorted(\n    service\n    for service, values in aggregate.items()\n    if values[\"errors\"] / values[\"requests\"] > warn\n)\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/requests.csv",
+      "data/thresholds.conf"
+    ],
+    "expected": {
+      "result": [
+        "api"
+      ]
+    },
+    "reuse_hint": {
+      "source_rounds": [
+        2,
+        5
+      ],
+      "topics": [
+        "requests",
+        "error-rate",
+        "thresholds"
+      ],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 7,
+    "description": "使用 access.log 和 thresholds.conf，统计 latency_ms 严格大于 latency_warn_ms 的请求数。",
+    "code": "import json\n\nthresholds = {}\nfor line in INPUT_ARTIFACTS[\"data/thresholds.conf\"].splitlines():\n    if line:\n        key, value = line.split(\"=\", 1)\n        thresholds[key] = float(value) if key == \"error_rate_warn\" else int(value)\n\nlatency_warn_ms = thresholds[\"latency_warn_ms\"]\nlines = INPUT_ARTIFACTS[\"data/access.log\"].splitlines()\nresult = sum(\n    1\n    for line in lines\n    if line and int(line.split()[-1]) > latency_warn_ms\n)\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/access.log",
+      "data/thresholds.conf"
+    ],
+    "expected": {
+      "result": 3
+    },
+    "reuse_hint": {
+      "source_rounds": [
+        4,
+        5
+      ],
+      "topics": [
+        "access",
+        "latency",
+        "thresholds"
+      ],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 8,
+    "description": "重复执行 Round 2，用于验证 Memory 避免重复 CodeAct。",
+    "code": "import csv\nimport io\nimport json\n\nrows = csv.DictReader(io.StringIO(INPUT_ARTIFACTS[\"data/requests.csv\"]))\napi_rows = [row for row in rows if row[\"service\"] == \"api\"]\nresult = {\n    \"errors\": sum(int(row[\"errors\"]) for row in api_rows),\n    \"requests\": sum(int(row[\"requests\"]) for row in api_rows),\n}\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/requests.csv"
+    ],
+    "expected": {
+      "result": {
+        "errors": 14,
+        "requests": 200
+      }
+    },
+    "reuse_hint": {
+      "source_rounds": [
+        2
+      ],
+      "topics": [
+        "requests",
+        "api"
+      ],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 9,
+    "description": "重复执行 Round 3，用于验证第二个 Memory CodeAct 复用点。",
+    "code": "import json\n\nservices = json.loads(INPUT_ARTIFACTS[\"data/services.json\"])\nresult = [item[\"name\"] for item in services if item[\"status\"] == \"running\"]\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/services.json"
+    ],
+    "expected": {
+      "result": [
+        "gateway",
+        "worker"
+      ]
+    },
+    "reuse_hint": {
+      "source_rounds": [
+        3
+      ],
+      "topics": [
+        "services",
+        "running"
+      ],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "local-codeact-analysis-chain",
+    "round": 10,
+    "description": "对所有 fixture 生成一个最终 summary。",
+    "code": "import csv\nimport io\nimport json\n\nrequest_rows = list(csv.DictReader(io.StringIO(INPUT_ARTIFACTS[\"data/requests.csv\"])))\ntotal_requests = sum(int(row[\"requests\"]) for row in request_rows)\napi_errors = sum(\n    int(row[\"errors\"])\n    for row in request_rows\n    if row[\"service\"] == \"api\"\n)\n\nservices = json.loads(INPUT_ARTIFACTS[\"data/services.json\"])\nrunning_services = sum(1 for item in services if item[\"status\"] == \"running\")\n\nthresholds = {}\nfor line in INPUT_ARTIFACTS[\"data/thresholds.conf\"].splitlines():\n    if line:\n        key, value = line.split(\"=\", 1)\n        thresholds[key] = float(value) if key == \"error_rate_warn\" else int(value)\n\naccess_lines = [line for line in INPUT_ARTIFACTS[\"data/access.log\"].splitlines() if line]\nserver_errors = sum(1 for line in access_lines if int(line.split()[-2]) >= 500)\nslow_requests = sum(\n    1\n    for line in access_lines\n    if int(line.split()[-1]) > thresholds[\"latency_warn_ms\"]\n)\n\nresult = {\n    \"api_errors\": api_errors,\n    \"running_services\": running_services,\n    \"server_errors\": server_errors,\n    \"slow_requests\": slow_requests,\n    \"total_requests\": total_requests,\n}\nprint(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\")))\n",
+    "input_artifacts": [
+      "data/requests.csv",
+      "data/services.json",
+      "data/access.log",
+      "data/thresholds.conf"
+    ],
+    "expected": {
+      "result": {
+        "api_errors": 14,
+        "running_services": 2,
+        "server_errors": 2,
+        "slow_requests": 3,
+        "total_requests": 350
+      }
+    },
+    "reuse_hint": {
+      "source_rounds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "topics": [
+        "requests",
+        "services",
+        "access",
+        "thresholds",
+        "summary"
+      ],
+      "expected_reuse": true
+    }
+  }
+]

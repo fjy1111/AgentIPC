@@ -1,3 +1,5 @@
+import math
+
 from agentipc.artifacts.store import ArtifactStore
 from agentipc.evaluation.metrics import MetricsCollector
 from agentipc.memory.models import MemoryRecord, MemoryType
@@ -21,6 +23,37 @@ class _StateHubConfigurationError(TypeError, ValueError):
 
 class _MemoryServiceConfigurationError(TypeError, ValueError):
     pass
+
+
+def _is_reusable_codeact_execution(
+    cached_execution: dict[str, object],
+) -> bool:
+    if cached_execution.get("operation") != "codeact":
+        return False
+
+    output = cached_execution.get("output")
+    if type(output) is not dict:
+        return False
+
+    exit_code = output.get("exit_code")
+    if type(exit_code) is not int or exit_code != 0:
+        return False
+    if type(output.get("stdout")) is not str:
+        return False
+    if type(output.get("stderr")) is not str:
+        return False
+    if output.get("timed_out") is not False:
+        return False
+
+    duration_ms = output.get("duration_ms")
+    if type(duration_ms) not in (int, float):
+        return False
+    if type(duration_ms) is float and not math.isfinite(duration_ms):
+        return False
+    if duration_ms < 0:
+        return False
+
+    return True
 
 
 def _select_reusable_memory(
@@ -49,9 +82,15 @@ def _select_reusable_memory(
         cached_execution = record.payload.get("execution")
         if type(cached_execution) is not dict:
             continue
-        if cached_execution.get("operation") != "identity":
-            continue
-        if "output" not in cached_execution:
+
+        operation = cached_execution.get("operation")
+        if operation == "identity":
+            if "output" not in cached_execution:
+                continue
+        elif operation == "codeact":
+            if not _is_reusable_codeact_execution(cached_execution):
+                continue
+        else:
             continue
 
         return ref, record

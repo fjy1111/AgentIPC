@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -34,6 +35,27 @@ def _validate_unique_non_empty_strings(values: list[str], field_name: str) -> li
     if len(normalized) != len(set(normalized)):
         raise ValueError(f"{field_name} must not contain duplicates")
     return values
+
+
+def _validate_json_result(value: object) -> None:
+    value_type = type(value)
+    if value is None or value_type in (str, bool, int):
+        return
+    if value_type is float:
+        if not math.isfinite(value):
+            raise ValueError("result must contain only finite floats")
+        return
+    if value_type is list:
+        for item in value:
+            _validate_json_result(item)
+        return
+    if value_type is dict:
+        for key, item in value.items():
+            if type(key) is not str:
+                raise ValueError("result dict keys must be str")
+            _validate_json_result(item)
+        return
+    raise ValueError("result must be JSON-compatible")
 
 
 class KnowledgeExpected(BaseModel):
@@ -109,6 +131,64 @@ class KnowledgeTask(BaseModel):
         return self
 
 
+class CodeActExpected(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result: Any
+
+    @field_validator("result", mode="before")
+    @classmethod
+    def _validate_result(cls, value: object) -> object:
+        _validate_json_result(value)
+        return value
+
+
+class CodeActTask(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: StrictString
+    round: PositiveStrictInt
+    description: StrictString
+    code: StrictString
+    input_artifacts: list[StrictString]
+    expected: CodeActExpected
+    reuse_hint: ReuseHint
+
+    @field_validator("group_id", "description", "code")
+    @classmethod
+    def _require_non_empty_strings(cls, value: str) -> str:
+        return _require_non_empty(value)
+
+    @field_validator("input_artifacts", mode="before")
+    @classmethod
+    def _require_input_artifact_list(cls, value: object) -> object:
+        value = _require_list(value, "input_artifacts")
+        if not value:
+            raise ValueError("input_artifacts must contain at least one item")
+        return value
+
+    @field_validator("input_artifacts")
+    @classmethod
+    def _validate_input_artifacts(cls, value: list[str]) -> list[str]:
+        _validate_unique_non_empty_strings(value, "input_artifacts")
+        for artifact in value:
+            if artifact.startswith("/"):
+                raise ValueError("input_artifacts must use relative paths")
+            if "\\" in artifact:
+                raise ValueError("input_artifacts must use POSIX separators")
+            parts = artifact.split("/")
+            if any(part in ("", ".", "..") for part in parts):
+                raise ValueError("input_artifacts must be portable POSIX relative paths")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_source_rounds(self) -> "CodeActTask":
+        invalid = [source for source in self.reuse_hint.source_rounds if source >= self.round]
+        if invalid:
+            raise ValueError("reuse source rounds must be strictly less than task round")
+        return self
+
+
 def load_knowledge_tasks(path: str | Path) -> list[KnowledgeTask]:
     if not isinstance(path, (str, Path)):
         raise TypeError("path must be str or pathlib.Path")
@@ -129,6 +209,32 @@ def load_knowledge_tasks(path: str | Path) -> list[KnowledgeTask]:
         key = (task.group_id, task.round)
         if key in seen_keys:
             raise ValueError(f"duplicate knowledge task: {key}")
+        seen_keys.add(key)
+        tasks.append(task)
+
+    return tasks
+
+
+def load_codeact_tasks(path: str | Path) -> list[CodeActTask]:
+    if not isinstance(path, (str, Path)):
+        raise TypeError("path must be str or pathlib.Path")
+
+    path_obj = Path(path)
+    with path_obj.open("r", encoding="utf-8") as handle:
+        raw = json.load(handle)
+
+    if not isinstance(raw, list):
+        raise ValueError("codeact task JSON top level must be a list")
+    if not raw:
+        raise ValueError("codeact task list must not be empty")
+
+    tasks: list[CodeActTask] = []
+    seen_keys: set[tuple[str, int]] = set()
+    for item in raw:
+        task = CodeActTask.model_validate(item)
+        key = (task.group_id, task.round)
+        if key in seen_keys:
+            raise ValueError(f"duplicate codeact task: {key}")
         seen_keys.add(key)
         tasks.append(task)
 

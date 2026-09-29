@@ -1,0 +1,5 @@
+service,region,requests,errors,latency_ms
+api,east,120,6,180
+api,west,80,8,240
+worker,east,100,2,90
+worker,west,50,5,130
