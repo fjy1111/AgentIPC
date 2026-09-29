@@ -9,7 +9,12 @@ produce identical non-timing fields.
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
+from itertools import count
 from pathlib import Path
+from uuid import UUID
+
+import agentipc.utils
 
 from agentipc.agents.executor import ExecutorAgent
 from agentipc.agents.planner import PlannerAgent
@@ -54,6 +59,37 @@ KNOWLEDGE = [
         "keywords": ["NetworkManager", "openEuler", "network"],
     },
 ]
+
+
+class _FixedDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        fixed = cls(
+            2026,
+            1,
+            1,
+            0,
+            0,
+            0,
+            123456,
+            tzinfo=timezone.utc,
+        )
+        if tz is None:
+            return fixed
+        return fixed.astimezone(tz)
+
+
+def _reset_protocol_randomness(monkeypatch) -> None:
+    # Protocol communication metrics include AgentEnvelope.message_id and
+    # AgentEnvelope.created_at. T131 freezes these volatile metadata sources
+    # so independent suites exercise identical deterministic inputs.
+    sequence = count(1)
+
+    def deterministic_uuid4():
+        return UUID(int=next(sequence))
+
+    monkeypatch.setattr(agentipc.utils, "uuid4", deterministic_uuid4)
+    monkeypatch.setattr(agentipc.utils, "datetime", _FixedDateTime)
 
 
 def _build_deterministic_context(
@@ -135,7 +171,9 @@ def _build_agents() -> AgentRegistry:
 class TestTwoIndependentSuites:
     """Test that two independent Mock suites produce reproducible results."""
 
-    def test_two_suites_produce_identical_deterministic_fields(self, tmp_path: Path):
+    def test_two_suites_produce_identical_deterministic_fields(
+        self, tmp_path: Path, monkeypatch
+    ):
         """Two independent suites with same seeds produce identical non-timing fields."""
         # Suite 1
         suite1_root = tmp_path / "suite1"
@@ -160,6 +198,7 @@ class TestTwoIndependentSuites:
                 _build_agents(),
             )
 
+        _reset_protocol_randomness(monkeypatch)
         records1 = run_abcd_suite(
             tasks=[FIXED_TASK],
             seeds=FIXED_SEEDS,
@@ -189,6 +228,7 @@ class TestTwoIndependentSuites:
                 _build_agents(),
             )
 
+        _reset_protocol_randomness(monkeypatch)
         records2 = run_abcd_suite(
             tasks=[FIXED_TASK],
             seeds=FIXED_SEEDS,
@@ -256,7 +296,7 @@ class TestTwoIndependentSuites:
 class TestSummaryReproducibility:
     """Test that summaries from two suites have identical non-timing fields."""
 
-    def test_summaries_match_except_timing(self, tmp_path: Path):
+    def test_summaries_match_except_timing(self, tmp_path: Path, monkeypatch):
         """Summaries from two suites match except for latency metrics."""
         # Suite 1
         suite1_root = tmp_path / "suite1"
@@ -281,6 +321,7 @@ class TestSummaryReproducibility:
                 _build_agents(),
             )
 
+        _reset_protocol_randomness(monkeypatch)
         records1 = run_abcd_suite(
             tasks=[FIXED_TASK],
             seeds=FIXED_SEEDS,
@@ -312,6 +353,7 @@ class TestSummaryReproducibility:
                 _build_agents(),
             )
 
+        _reset_protocol_randomness(monkeypatch)
         records2 = run_abcd_suite(
             tasks=[FIXED_TASK],
             seeds=FIXED_SEEDS,
