@@ -70,9 +70,16 @@ class TestDerivedMetricsModel:
 
         data = metrics.model_dump(mode="json")
         json_str = json.dumps(data)
+        decoded = json.loads(json_str)
 
-        assert '"token_saving_rate":null' in json_str
-        assert '"char_saving_rate":0.25' in json_str
+        # Semantic validation: None values become JSON null
+        assert decoded["token_saving_rate"] is None
+        assert decoded["latency_improvement_rate"] is None
+        assert decoded["effective_hit_rate"] is None
+
+        # Non-None values preserved
+        assert decoded["char_saving_rate"] == 0.25
+        assert decoded["repeat_work_reduction_rate"] == 0.10
 
 
 class TestTokenSavingRate:
