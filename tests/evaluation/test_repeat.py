@@ -399,11 +399,11 @@ class TestFreshContextRequirement:
     def test_factory_creates_fresh_metrics(self, tmp_path: Path):
         """Each run gets a different MetricsCollector instance."""
         seeds = [42, 43, 44]
-        metrics_ids: list[int] = []
+        metrics_objects: list[MetricsCollector] = []
 
         def factory(run_index: int, seed: int) -> tuple[RunContext, AgentRegistry]:
             ctx = _build_context(tmp_path, run_index=run_index, seed=seed)
-            metrics_ids.append(id(ctx.metrics))
+            metrics_objects.append(ctx.metrics)
             return ctx, _build_agents()
 
         run_repeated(
@@ -414,16 +414,19 @@ class TestFreshContextRequirement:
         )
 
         # All metrics instances must be different
-        assert len(set(metrics_ids)) == 3
+        assert len(metrics_objects) == 3
+        assert metrics_objects[0] is not metrics_objects[1]
+        assert metrics_objects[0] is not metrics_objects[2]
+        assert metrics_objects[1] is not metrics_objects[2]
 
     def test_factory_creates_fresh_registry(self, tmp_path: Path):
         """Each run gets a different CapabilityRegistry instance."""
         seeds = [42, 43, 44]
-        registry_ids: list[int] = []
+        registry_objects: list[CapabilityRegistry] = []
 
         def factory(run_index: int, seed: int) -> tuple[RunContext, AgentRegistry]:
             ctx = _build_context(tmp_path, run_index=run_index, seed=seed)
-            registry_ids.append(id(ctx.registry))
+            registry_objects.append(ctx.registry)
             return ctx, _build_agents()
 
         run_repeated(
@@ -434,16 +437,19 @@ class TestFreshContextRequirement:
         )
 
         # All registries must be different
-        assert len(set(registry_ids)) == 3
+        assert len(registry_objects) == 3
+        assert registry_objects[0] is not registry_objects[1]
+        assert registry_objects[0] is not registry_objects[2]
+        assert registry_objects[1] is not registry_objects[2]
 
     def test_factory_creates_fresh_trace_logger(self, tmp_path: Path):
         """Each run gets a different TraceLogger instance."""
         seeds = [42, 43, 44]
-        logger_ids: list[int] = []
+        logger_objects: list[TraceLogger] = []
 
         def factory(run_index: int, seed: int) -> tuple[RunContext, AgentRegistry]:
             ctx = _build_context(tmp_path, run_index=run_index, seed=seed)
-            logger_ids.append(id(ctx.trace_logger))
+            logger_objects.append(ctx.trace_logger)
             return ctx, _build_agents()
 
         run_repeated(
@@ -454,7 +460,10 @@ class TestFreshContextRequirement:
         )
 
         # All loggers must be different
-        assert len(set(logger_ids)) == 3
+        assert len(logger_objects) == 3
+        assert logger_objects[0] is not logger_objects[1]
+        assert logger_objects[0] is not logger_objects[2]
+        assert logger_objects[1] is not logger_objects[2]
 
 
 class TestFailureRecordContinuation:
