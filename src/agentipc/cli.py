@@ -1,5 +1,6 @@
 import argparse
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 
 from agentipc import __version__
 
@@ -43,6 +44,30 @@ def _non_negative_int(value: str) -> int:
     if parsed < 0:
         raise argparse.ArgumentTypeError("must be >= 0")
     return parsed
+
+
+@contextmanager
+def _offline_text_counting() -> Iterator[None]:
+    """Force optional tiktoken counting onto the offline-safe fallback path.
+
+    tiktoken may be installed while its encoding assets are not cached locally.
+    In that state, get_encoding() can try to download assets. Core mock CLI
+    commands must remain fully offline, so temporarily make the optional loader
+    behave as if tiktoken were unavailable. TextCounter already defines that
+    condition as the supported ``token_method=unavailable`` fallback.
+    """
+    from agentipc.evaluation import text_counter as text_counter_module
+
+    original_loader = text_counter_module._load_tiktoken
+
+    def unavailable_tiktoken() -> object:
+        raise ImportError("tiktoken disabled for offline AgentIPC CLI command")
+
+    text_counter_module._load_tiktoken = unavailable_tiktoken
+    try:
+        yield
+    finally:
+        text_counter_module._load_tiktoken = original_loader
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -512,28 +537,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "demo":
         from agentipc.demo import render_demo, run_demo
 
-        report = run_demo(provider=args.provider)
+        with _offline_text_counting():
+            report = run_demo(provider=args.provider)
         print(render_demo(report))
         return 0
 
     try:
         if args.command == "benchmark":
-            return _run_benchmark_command(
-                suite=args.suite,
-                repeat=args.repeat,
-                seed=args.seed,
-                provider=args.provider,
-                results_root=args.results_root,
-            )
+            with _offline_text_counting():
+                return _run_benchmark_command(
+                    suite=args.suite,
+                    repeat=args.repeat,
+                    seed=args.seed,
+                    provider=args.provider,
+                    results_root=args.results_root,
+                )
 
         if args.command == "run-scenario":
-            return _run_scenario_command(
-                scenario=args.scenario,
-                provider=args.provider,
-                seed=args.seed,
-                results_root=args.results_root,
-                scenario_root=args.scenario_root,
-            )
+            with _offline_text_counting():
+                return _run_scenario_command(
+                    scenario=args.scenario,
+                    provider=args.provider,
+                    seed=args.seed,
+                    results_root=args.results_root,
+                    scenario_root=args.scenario_root,
+                )
     except (OSError, RuntimeError, ValueError) as exc:
         import sys
 
