@@ -247,7 +247,7 @@ def test_sentence_transformer_requires_explicit_model_name(options) -> None:
         )
 
 
-@pytest.mark.parametrize("options", [None, {}])
+@pytest.mark.parametrize("options", [None, {}, {"dim": 128}])
 def test_openai_embedding_requires_explicit_model(options) -> None:
     with pytest.raises(
         ValueError,
@@ -259,7 +259,14 @@ def test_openai_embedding_requires_explicit_model(options) -> None:
         )
 
 
-@pytest.mark.parametrize("options", [None, {}, {"model": "test-model"}])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"model": "test-model"},
+        {"model": "test-model", "api_key": "key"},
+        {"model": "test-model", "base_url": "http://localhost:8001/v1"},
+    ],
+)
 def test_openai_embedding_requires_explicit_dim(options) -> None:
     with pytest.raises(
         ValueError,
