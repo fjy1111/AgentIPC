@@ -13,7 +13,7 @@ from dataclasses import replace
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
-from agentipc.evaluation.experiment import ExperimentConfig
+from agentipc.evaluation.experiment import ABCD_CONFIGS, ExperimentConfig
 from agentipc.evaluation.metrics import TaskTimer
 from agentipc.evaluation.text_counter import TextCounter
 from agentipc.runtime.agent_registry import AgentRegistry
@@ -237,21 +237,8 @@ def run_repeated(
     if task == "":
         raise ValueError("task must be a non-empty str")
 
-    # Validate seeds list
-    if type(seeds) is not list:
-        raise TypeError("seeds must be a list[int]")
-    if len(seeds) == 0:
-        raise ValueError("seeds must be a non-empty list[int]")
-
-    # Validate each seed before any execution
-    for i, seed in enumerate(seeds):
-        # Reject bool (bool is int subclass but not allowed)
-        if type(seed) is bool:
-            raise TypeError(f"seeds[{i}] must be int, not bool")
-        if type(seed) is not int:
-            raise TypeError(f"seeds[{i}] must be int, got {type(seed).__name__}")
-        if seed < 0:
-            raise ValueError(f"seeds[{i}] must be >= 0, got {seed}")
+    # Validate seeds using shared helper
+    _validate_seeds(seeds)
 
     # Validate run_factory
     if not callable(run_factory):
@@ -300,3 +287,172 @@ def run_repeated(
         records.append(record)
 
     return records
+
+
+def _validate_seeds(seeds: list[int]) -> None:
+    """Validate seeds list for benchmark execution.
+
+    This is a shared validation helper used by run_repeated and run_abcd_suite
+    to ensure consistent seed validation before any execution begins.
+
+    Args:
+        seeds: List of random seeds to validate
+
+    Raises:
+        TypeError: If seeds is not a list[int] or contains non-int/bool values
+        ValueError: If seeds is empty or contains negative values
+    """
+    if type(seeds) is not list:
+        raise TypeError("seeds must be a list[int]")
+    if len(seeds) == 0:
+        raise ValueError("seeds must be a non-empty list[int]")
+
+    for i, seed in enumerate(seeds):
+        # Reject bool (bool is int subclass but not allowed)
+        if type(seed) is bool:
+            raise TypeError(f"seeds[{i}] must be int, not bool")
+        if type(seed) is not int:
+            raise TypeError(f"seeds[{i}] must be int, got {type(seed).__name__}")
+        if seed < 0:
+            raise ValueError(f"seeds[{i}] must be >= 0, got {seed}")
+
+
+def run_abcd_suite(
+    *,
+    tasks: list[str],
+    seeds: list[int],
+    run_factory: Callable[
+        [ExperimentConfig, int, int, int, str],
+        tuple[RunContext, AgentRegistry],
+    ],
+) -> list[RawRunRecord]:
+    """Execute A/B/C/D experiment suite over multiple tasks and seeds.
+
+    This function runs the fixed A/B/C/D experiment matrix in config-major order:
+    for each experiment configuration (A, B, C, D), execute all tasks, and for
+    each task execute all seeds. This ensures clear ablation comparison by
+    keeping experiment configurations grouped together.
+
+    The output order is:
+    - Outer: A, B, C, D (fixed order from ABCD_CONFIGS)
+    - Middle: tasks (in input order)
+    - Inner: seeds (in input order)
+
+    After execution, the function verifies benchmark integrity by checking that
+    all A/B/C/D records for the same task_index and run_index have identical
+    task, task_hash, and seed values (ensuring fair comparison).
+
+    Args:
+        tasks: List of task descriptions (non-empty strings)
+        seeds: List of random seeds (non-empty, each seed >= 0)
+        run_factory: Callable that receives (experiment, task_index, run_index,
+                     seed, task) and returns (fresh RunContext, fresh AgentRegistry)
+
+    Returns:
+        List of RawRunRecord in config-major order (A→B→C→D, then task, then seed)
+
+    Raises:
+        TypeError: If arguments have wrong types
+        ValueError: If tasks/seeds are empty or contain invalid values
+        RuntimeError: If benchmark integrity check fails (task_hash mismatch)
+    """
+    # Validate tasks
+    if type(tasks) is not list:
+        raise TypeError("tasks must be a list[str]")
+    if len(tasks) == 0:
+        raise ValueError("tasks must be a non-empty list[str]")
+
+    for i, task in enumerate(tasks):
+        if type(task) is not str:
+            raise TypeError(f"tasks[{i}] must be str, got {type(task).__name__}")
+        if task == "":
+            raise ValueError(f"tasks[{i}] must be a non-empty str")
+
+    # Validate seeds using shared helper
+    _validate_seeds(seeds)
+
+    # Validate run_factory
+    if not callable(run_factory):
+        raise TypeError("run_factory must be callable")
+
+    # Execute suite in config-major order
+    all_records: list[RawRunRecord] = []
+
+    for experiment in ABCD_CONFIGS:
+        for task_index, task in enumerate(tasks):
+            # Build adapter closure for run_repeated
+            def factory_adapter(run_index: int, seed: int) -> tuple[RunContext, AgentRegistry]:
+                return run_factory(experiment, task_index, run_index, seed, task)
+
+            # Execute repeated runs for this experiment/task combination
+            task_records = run_repeated(
+                experiment=experiment,
+                task=task,
+                seeds=seeds,
+                run_factory=factory_adapter,
+            )
+
+            all_records.extend(task_records)
+
+    # Verify benchmark integrity: same task/task_hash/seed for all configs
+    _verify_suite_integrity(all_records, len(tasks), len(seeds))
+
+    return all_records
+
+
+def _verify_suite_integrity(
+    records: list[RawRunRecord],
+    num_tasks: int,
+    num_seeds: int,
+) -> None:
+    """Verify that A/B/C/D experiments use identical task inputs.
+
+    For each task_index and run_index, check that all four experiment
+    configurations (A, B, C, D) received exactly the same task, task_hash,
+    and seed. This ensures fair ablation comparison.
+
+    Args:
+        records: All suite records in config-major order
+        num_tasks: Number of tasks in the suite
+        num_seeds: Number of seeds per task
+
+    Raises:
+        RuntimeError: If any task/task_hash/seed mismatch is detected
+    """
+    records_per_config = num_tasks * num_seeds
+
+    for task_index in range(num_tasks):
+        for run_index in range(num_seeds):
+            # Extract corresponding records from A/B/C/D
+            config_records = []
+            for config_index in range(4):  # A, B, C, D
+                record_index = (
+                    config_index * records_per_config
+                    + task_index * num_seeds
+                    + run_index
+                )
+                config_records.append(records[record_index])
+
+            # Check task consistency
+            tasks = [r.task for r in config_records]
+            if len(set(tasks)) != 1:
+                raise RuntimeError(
+                    f"Benchmark integrity violation: task_index={task_index}, "
+                    f"run_index={run_index} has inconsistent tasks: {tasks}"
+                )
+
+            # Check task_hash consistency
+            task_hashes = [r.task_hash for r in config_records]
+            if len(set(task_hashes)) != 1:
+                raise RuntimeError(
+                    f"Benchmark integrity violation: task_index={task_index}, "
+                    f"run_index={run_index} has inconsistent task_hashes: {task_hashes}"
+                )
+
+            # Check seed consistency
+            seeds_used = [r.seed for r in config_records]
+            if len(set(seeds_used)) != 1:
+                raise RuntimeError(
+                    f"Benchmark integrity violation: task_index={task_index}, "
+                    f"run_index={run_index} has inconsistent seeds: {seeds_used}"
+                )
