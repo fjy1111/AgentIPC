@@ -1,0 +1,148 @@
+[
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 1,
+    "query": "在 openEuler 主机上，使用 NetworkManager 时，首先用什么命令查看网卡设备的连接状态？",
+    "expected": {
+      "answer_contains": ["nmcli device status"],
+      "evidence_ids": ["nm-basics"]
+    },
+    "reuse_hint": {
+      "source_rounds": [],
+      "topics": ["network", "networkmanager"],
+      "expected_reuse": false
+    }
+  },
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 2,
+    "query": "如何查看某个网络设备当前的 IPv4 地址、网关和 DNS 信息？",
+    "expected": {
+      "answer_contains": ["nmcli device show"],
+      "evidence_ids": ["nm-basics"]
+    },
+    "reuse_hint": {
+      "source_rounds": [1],
+      "topics": ["network", "networkmanager", "dns"],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 3,
+    "query": "如何通过系统解析器验证主机名是否能解析，而不是直接向 DNS 服务器发查询？",
+    "expected": {
+      "answer_contains": ["getent hosts"],
+      "evidence_ids": ["dns-resolution"]
+    },
+    "reuse_hint": {
+      "source_rounds": [1, 2],
+      "topics": ["dns", "resolver"],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 4,
+    "query": "如何同时确认当前活动连接以及该设备收到的 DNS 配置？",
+    "expected": {
+      "answer_contains": ["nmcli connection show --active", "nmcli device show"],
+      "evidence_ids": ["nm-basics", "dns-resolution"]
+    },
+    "reuse_hint": {
+      "source_rounds": [1, 2, 3],
+      "topics": ["network", "dns", "networkmanager"],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 5,
+    "query": "某个 systemd 服务无法访问时，应该依次检查服务状态、最近日志和监听端口的哪些命令？",
+    "expected": {
+      "answer_contains": ["systemctl status", "journalctl -u", "ss -lntp"],
+      "evidence_ids": ["service-diagnostics"]
+    },
+    "reuse_hint": {
+      "source_rounds": [],
+      "topics": ["systemd", "service"],
+      "expected_reuse": false
+    }
+  },
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 6,
+    "query": "如何查看 firewalld 当前活动 zone 以及该 zone 已允许的服务？",
+    "expected": {
+      "answer_contains": ["firewall-cmd --get-active-zones", "firewall-cmd --list-services"],
+      "evidence_ids": ["firewall-checks"]
+    },
+    "reuse_hint": {
+      "source_rounds": [],
+      "topics": ["firewall", "service"],
+      "expected_reuse": false
+    }
+  },
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 7,
+    "query": "如果服务已经监听端口但客户端仍无法访问，如何区分是服务进程问题还是防火墙放行问题？",
+    "expected": {
+      "answer_contains": ["ss -lntp", "firewall-cmd --list-services"],
+      "evidence_ids": ["service-diagnostics", "firewall-checks"]
+    },
+    "reuse_hint": {
+      "source_rounds": [5, 6],
+      "topics": ["systemd", "service", "firewall"],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 8,
+    "query": "如何查看某个网络设备当前的 IPv4 地址、网关和 DNS 信息？",
+    "expected": {
+      "answer_contains": ["nmcli device show"],
+      "evidence_ids": ["nm-basics"]
+    },
+    "reuse_hint": {
+      "source_rounds": [2],
+      "topics": ["network", "networkmanager", "dns"],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 9,
+    "query": "如何通过系统解析器验证主机名是否能解析，而不是直接向 DNS 服务器发查询？",
+    "expected": {
+      "answer_contains": ["getent hosts"],
+      "evidence_ids": ["dns-resolution"]
+    },
+    "reuse_hint": {
+      "source_rounds": [3],
+      "topics": ["dns", "resolver"],
+      "expected_reuse": true
+    }
+  },
+  {
+    "group_id": "openeuler-network-service-chain",
+    "round": 10,
+    "query": "请给出一个从网络设备、DNS、systemd 服务到 firewalld 的最小排障顺序，并列出每一步的关键命令。",
+    "expected": {
+      "answer_contains": [
+        "nmcli device status",
+        "getent hosts",
+        "systemctl status",
+        "ss -lntp",
+        "firewall-cmd --get-active-zones"
+      ],
+      "evidence_ids": ["nm-basics", "dns-resolution", "service-diagnostics", "firewall-checks"]
+    },
+    "reuse_hint": {
+      "source_rounds": [1, 3, 5, 6, 7],
+      "topics": ["network", "dns", "systemd", "service", "firewall"],
+      "expected_reuse": true
+    }
+  }
+]
