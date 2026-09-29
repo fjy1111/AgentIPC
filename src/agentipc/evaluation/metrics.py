@@ -31,6 +31,13 @@ class MetricsSnapshot(BaseModel):
     tool_call_count: StrictNonNegativeInt = 0
     repeated_tool_call_count: StrictNonNegativeInt = 0
 
+    llm_call_count: StrictNonNegativeInt = 0
+    llm_prompt_tokens: StrictNonNegativeInt = 0
+    llm_completion_tokens: StrictNonNegativeInt = 0
+    llm_total_tokens: StrictNonNegativeInt = 0
+    llm_usage_missing_count: StrictNonNegativeInt = 0
+    llm_latency_ms: float = 0.0
+
     latency_ms: float = 0.0
     success: StrictBool = False
 
@@ -45,6 +52,19 @@ class MetricsSnapshot(BaseModel):
             raise ValueError("latency_ms must be finite")
         if normalized < 0:
             raise ValueError("latency_ms must be non-negative")
+        return normalized
+
+    @field_validator("llm_latency_ms", mode="before")
+    @classmethod
+    def _validate_llm_latency_ms(cls, value: object) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("llm_latency_ms must be an int or float")
+
+        normalized = float(value)
+        if not math.isfinite(normalized):
+            raise ValueError("llm_latency_ms must be finite")
+        if normalized < 0:
+            raise ValueError("llm_latency_ms must be non-negative")
         return normalized
 
 
@@ -71,6 +91,12 @@ class MetricsCollector:
         self._counters = {metric: 0 for metric in self._INCREMENTABLE_METRICS}
         self._latency_ms = 0.0
         self._success = False
+        self._llm_call_count = 0
+        self._llm_prompt_tokens = 0
+        self._llm_completion_tokens = 0
+        self._llm_total_tokens = 0
+        self._llm_usage_missing_count = 0
+        self._llm_latency_ms = 0.0
 
     def increment(self, metric: str, amount: int = 1) -> None:
         if not isinstance(metric, str):
@@ -101,9 +127,36 @@ class MetricsCollector:
             raise TypeError("success must be a bool")
         self._success = success
 
+    def record_llm_response(self, response: object) -> None:
+        from agentipc.providers.base import LLMResponse
+
+        if not isinstance(response, LLMResponse):
+            raise TypeError("response must be an LLMResponse")
+
+        self._llm_call_count += 1
+        self._llm_latency_ms += response.latency_ms
+
+        if (
+            response.prompt_tokens is not None
+            and response.completion_tokens is not None
+        ):
+            self._llm_prompt_tokens += response.prompt_tokens
+            self._llm_completion_tokens += response.completion_tokens
+            self._llm_total_tokens += (
+                response.prompt_tokens + response.completion_tokens
+            )
+        else:
+            self._llm_usage_missing_count += 1
+
     def snapshot(self) -> MetricsSnapshot:
         return MetricsSnapshot(
             **self._counters,
+            llm_call_count=self._llm_call_count,
+            llm_prompt_tokens=self._llm_prompt_tokens,
+            llm_completion_tokens=self._llm_completion_tokens,
+            llm_total_tokens=self._llm_total_tokens,
+            llm_usage_missing_count=self._llm_usage_missing_count,
+            llm_latency_ms=self._llm_latency_ms,
             latency_ms=self._latency_ms,
             success=self._success,
         )

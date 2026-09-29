@@ -105,3 +105,162 @@ def test_snapshot_is_detached_from_internal_state() -> None:
     snapshot.message_count = 999
 
     assert collector.snapshot().message_count == 2
+
+
+def test_record_llm_response_with_complete_usage() -> None:
+    from agentipc.providers.base import LLMResponse
+
+    collector = MetricsCollector()
+    response = LLMResponse(
+        text="test response",
+        prompt_tokens=10,
+        completion_tokens=5,
+        latency_ms=1.5,
+        raw=None,
+    )
+
+    collector.record_llm_response(response)
+    snapshot = collector.snapshot()
+
+    assert snapshot.llm_call_count == 1
+    assert snapshot.llm_prompt_tokens == 10
+    assert snapshot.llm_completion_tokens == 5
+    assert snapshot.llm_total_tokens == 15
+    assert snapshot.llm_usage_missing_count == 0
+    assert snapshot.llm_latency_ms == 1.5
+
+
+def test_record_llm_response_accumulates_multiple_calls() -> None:
+    from agentipc.providers.base import LLMResponse
+
+    collector = MetricsCollector()
+
+    response1 = LLMResponse(
+        text="first",
+        prompt_tokens=11,
+        completion_tokens=3,
+        latency_ms=1.25,
+        raw=None,
+    )
+    response2 = LLMResponse(
+        text="second",
+        prompt_tokens=20,
+        completion_tokens=4,
+        latency_ms=2.5,
+        raw=None,
+    )
+
+    collector.record_llm_response(response1)
+    collector.record_llm_response(response2)
+    snapshot = collector.snapshot()
+
+    assert snapshot.llm_call_count == 2
+    assert snapshot.llm_prompt_tokens == 31
+    assert snapshot.llm_completion_tokens == 7
+    assert snapshot.llm_total_tokens == 38
+    assert snapshot.llm_usage_missing_count == 0
+    assert snapshot.llm_latency_ms == 3.75
+
+
+def test_record_llm_response_with_missing_usage() -> None:
+    from agentipc.providers.base import LLMResponse
+
+    collector = MetricsCollector()
+    response = LLMResponse(
+        text="mock response",
+        prompt_tokens=None,
+        completion_tokens=None,
+        latency_ms=0.0,
+        raw=None,
+    )
+
+    collector.record_llm_response(response)
+    snapshot = collector.snapshot()
+
+    assert snapshot.llm_call_count == 1
+    assert snapshot.llm_prompt_tokens == 0
+    assert snapshot.llm_completion_tokens == 0
+    assert snapshot.llm_total_tokens == 0
+    assert snapshot.llm_usage_missing_count == 1
+    assert snapshot.llm_latency_ms == 0.0
+
+
+def test_record_llm_response_with_partial_usage_prompt_only() -> None:
+    from agentipc.providers.base import LLMResponse
+
+    collector = MetricsCollector()
+    response = LLMResponse(
+        text="partial",
+        prompt_tokens=10,
+        completion_tokens=None,
+        latency_ms=1.0,
+        raw=None,
+    )
+
+    collector.record_llm_response(response)
+    snapshot = collector.snapshot()
+
+    assert snapshot.llm_call_count == 1
+    assert snapshot.llm_prompt_tokens == 0
+    assert snapshot.llm_completion_tokens == 0
+    assert snapshot.llm_total_tokens == 0
+    assert snapshot.llm_usage_missing_count == 1
+    assert snapshot.llm_latency_ms == 1.0
+
+
+def test_record_llm_response_with_partial_usage_completion_only() -> None:
+    from agentipc.providers.base import LLMResponse
+
+    collector = MetricsCollector()
+    response = LLMResponse(
+        text="partial",
+        prompt_tokens=None,
+        completion_tokens=5,
+        latency_ms=1.0,
+        raw=None,
+    )
+
+    collector.record_llm_response(response)
+    snapshot = collector.snapshot()
+
+    assert snapshot.llm_call_count == 1
+    assert snapshot.llm_prompt_tokens == 0
+    assert snapshot.llm_completion_tokens == 0
+    assert snapshot.llm_total_tokens == 0
+    assert snapshot.llm_usage_missing_count == 1
+    assert snapshot.llm_latency_ms == 1.0
+
+
+def test_record_llm_response_rejects_wrong_type() -> None:
+    collector = MetricsCollector()
+
+    with pytest.raises(TypeError):
+        collector.record_llm_response("not a response")
+
+
+def test_record_llm_response_latency_accumulates_as_float() -> None:
+    from agentipc.providers.base import LLMResponse
+
+    collector = MetricsCollector()
+
+    response1 = LLMResponse(
+        text="first",
+        prompt_tokens=None,
+        completion_tokens=None,
+        latency_ms=1.25,
+        raw=None,
+    )
+    response2 = LLMResponse(
+        text="second",
+        prompt_tokens=None,
+        completion_tokens=None,
+        latency_ms=2,
+        raw=None,
+    )
+
+    collector.record_llm_response(response1)
+    collector.record_llm_response(response2)
+    snapshot = collector.snapshot()
+
+    assert snapshot.llm_latency_ms == 3.25
+    assert type(snapshot.llm_latency_ms) is float

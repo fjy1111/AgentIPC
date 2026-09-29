@@ -20,8 +20,13 @@ COUNTERS = {
     "memory_harmful",
     "tool_call_count",
     "repeated_tool_call_count",
+    "llm_call_count",
+    "llm_prompt_tokens",
+    "llm_completion_tokens",
+    "llm_total_tokens",
+    "llm_usage_missing_count",
 }
-EXPECTED_KEYS = COUNTERS | {"latency_ms", "success"}
+EXPECTED_KEYS = COUNTERS | {"latency_ms", "llm_latency_ms", "success"}
 
 
 def test_defaults() -> None:
@@ -62,6 +67,12 @@ def test_counter_validation_rejects_invalid_values(value: object) -> None:
 def test_latency_validation_rejects_invalid_values(value: object) -> None:
     with pytest.raises(ValidationError):
         MetricsSnapshot(latency_ms=value)
+
+
+@pytest.mark.parametrize("value", [-1, math.nan, math.inf, -math.inf, True, "12"])
+def test_llm_latency_validation_rejects_invalid_values(value: object) -> None:
+    with pytest.raises(ValidationError):
+        MetricsSnapshot(llm_latency_ms=value)
 
 
 def test_latency_accepts_int_and_normalizes_to_float() -> None:

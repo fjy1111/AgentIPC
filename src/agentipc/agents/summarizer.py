@@ -98,6 +98,14 @@ class SummarizerAgent(BaseAgent):
             messages,
             temperature=0.0,
         )
+
+        metrics = getattr(ctx, "metrics", None)
+        if metrics is not None:
+            from agentipc.evaluation.metrics import MetricsCollector
+
+            if isinstance(metrics, MetricsCollector):
+                metrics.record_llm_response(llm_response)
+
         answer = llm_response.text
         if type(answer) is not str:
             raise TypeError("provider response text must be a str")

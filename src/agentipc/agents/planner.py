@@ -71,6 +71,13 @@ class PlannerAgent(BaseAgent):
             temperature=0.0,
         )
 
+        metrics = getattr(ctx, "metrics", None)
+        if metrics is not None:
+            from agentipc.evaluation.metrics import MetricsCollector
+
+            if isinstance(metrics, MetricsCollector):
+                metrics.record_llm_response(llm_response)
+
         plan = {
             "task": task,
             "steps": [
