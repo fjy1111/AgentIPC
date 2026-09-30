@@ -1,5 +1,5 @@
 import argparse
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 
 from agentipc import __version__
@@ -44,6 +44,22 @@ def _non_negative_int(value: str) -> int:
     if parsed < 0:
         raise argparse.ArgumentTypeError("must be >= 0")
     return parsed
+
+
+def _tcp_port(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if not 1 <= parsed <= 65535:
+        raise argparse.ArgumentTypeError("must be between 1 and 65535")
+    return parsed
+
+
+def _non_empty_string(value: str) -> str:
+    if value == "":
+        raise argparse.ArgumentTypeError("must not be empty")
+    return value
 
 
 @contextmanager
@@ -163,6 +179,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--scenario-root",
         default="scenarios",
         help="Root containing scenario fixtures (default: scenarios)",
+    )
+
+    dashboard_parser = subparsers.add_parser(
+        "dashboard",
+        help="Run the local AgentIPC Dashboard",
+    )
+    dashboard_parser.add_argument(
+        "--host",
+        type=_non_empty_string,
+        default="127.0.0.1",
+        help="Host to bind (default: 127.0.0.1)",
+    )
+    dashboard_parser.add_argument(
+        "--port",
+        type=_tcp_port,
+        default=8000,
+        help="TCP port to bind (default: 8000)",
+    )
+    dashboard_parser.add_argument(
+        "--results-dir",
+        type=_non_empty_string,
+        default="results",
+        help="Benchmark results directory (default: results)",
     )
     return parser
 
@@ -515,6 +554,39 @@ def _run_scenario_command(
     return 0 if success_count == round_count else 1
 
 
+def _load_dashboard_runtime() -> tuple[Callable[..., object], Callable[..., object]]:
+    try:
+        import uvicorn
+        from agentipc.dashboard.app import create_app
+    except ImportError as exc:
+        raise RuntimeError(
+            "dashboard dependencies are not installed; install agentipc[dashboard]"
+        ) from exc
+
+    return uvicorn.run, create_app
+
+
+def _run_dashboard_command(
+    *,
+    host: str,
+    port: int,
+    results_dir: str,
+) -> int:
+    run_server, create_app = _load_dashboard_runtime()
+    app = create_app(results_dir=results_dir)
+
+    print("AgentIPC Dashboard")
+    print(f"URL: http://{host}:{port}/dashboard/")
+    print(f"Results: {results_dir}")
+
+    run_server(
+        app,
+        host=host,
+        port=port,
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the AgentIPC command-line interface."""
     parser = build_parser()
@@ -562,6 +634,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     results_root=args.results_root,
                     scenario_root=args.scenario_root,
                 )
+
+        if args.command == "dashboard":
+            return _run_dashboard_command(
+                host=args.host,
+                port=args.port,
+                results_dir=args.results_dir,
+            )
     except (OSError, RuntimeError, ValueError) as exc:
         import sys
 
