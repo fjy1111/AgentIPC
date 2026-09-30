@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentIPC Dashboard</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div>
+      <p class="eyebrow">AgentIPC · Evidence Viewer</p>
+      <h1>AgentIPC Dashboard</h1>
+      <p class="subtitle">Low-overhead Multi-Agent Communication / State / Memory Evidence</p>
+    </div>
+    <div id="page-status" class="status-pill" role="status" aria-live="polite">Loading runs…</div>
+  </header>
+
+  <main>
+    <section class="card run-control" aria-labelledby="run-heading">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">Benchmark run</p>
+          <h2 id="run-heading">Run selector</h2>
+        </div>
+        <label class="select-label" for="run-select">Ready run
+          <select id="run-select" disabled>
+            <option>Loading…</option>
+          </select>
+        </label>
+      </div>
+      <p id="run-counts" class="muted" aria-live="polite"></p>
+      <div id="run-meta" class="meta-grid" aria-live="polite"></div>
+    </section>
+
+    <section class="card" aria-labelledby="comparison-heading">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">Communication & execution evidence</p>
+          <h2 id="comparison-heading">A/B/C/D Comparison</h2>
+        </div>
+        <span class="badge">Aggregate metrics · mean per run</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th scope="col">Metric</th><th scope="col">A</th><th scope="col">B</th><th scope="col">C</th><th scope="col">D</th></tr>
+          </thead>
+          <tbody id="comparison-body"></tbody>
+        </table>
+      </div>
+      <p class="science-note">IPC <code>text_tokens</code> are communication-side token estimates. They are separate from provider-reported LLM prompt/completion tokens.</p>
+    </section>
+
+    <section class="card" aria-labelledby="derived-heading">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">Adjacent ablations</p>
+          <h2 id="derived-heading">Derived Comparisons</h2>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th scope="col">Comparison</th><th scope="col">Token saving</th><th scope="col">Char saving</th><th scope="col">Latency improvement</th><th scope="col">Repeat-work reduction</th><th scope="col">Effective hit rate</th></tr>
+          </thead>
+          <tbody id="derived-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="timeline-heading">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">Selected task execution</p>
+          <h2 id="timeline-heading">Agent Timeline</h2>
+        </div>
+        <label class="select-label" for="trace-select">Task trace
+          <select id="trace-select" disabled>
+            <option>No trace loaded</option>
+          </select>
+        </label>
+      </div>
+      <div id="trace-status" class="trace-summary" aria-live="polite"></div>
+      <ol id="timeline" class="timeline"></ol>
+    </section>
+
+    <div class="two-column">
+      <section class="card" aria-labelledby="state-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Non-text evidence</p>
+            <h2 id="state-heading">Non-text State Exchange</h2>
+          </div>
+        </div>
+        <div id="state-list" class="stack-list"></div>
+      </section>
+
+      <section class="card" aria-labelledby="memory-heading">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Cross-task reuse evidence</p>
+            <h2 id="memory-heading">Shared Memory</h2>
+          </div>
+        </div>
+        <div id="memory-metrics" class="metric-grid"></div>
+        <div id="memory-list" class="stack-list"></div>
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="environment-heading">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">Reproducibility</p>
+          <h2 id="environment-heading">Environment</h2>
+        </div>
+      </div>
+      <dl id="environment" class="definition-grid"></dl>
+    </section>
+  </main>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
