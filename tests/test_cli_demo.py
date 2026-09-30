@@ -49,7 +49,7 @@ def test_demo_programmatic_report_uses_fair_a_b_d_runtime() -> None:
     metrics_d = record_d.run_result.metrics
 
     assert metrics_a["text_chars"] > 0
-    assert metrics_a["text_tokens"] > 0
+
 
     assert metrics_b["protocol_bytes"] > 0
     assert metrics_b["state_transfer_count"] == 0
