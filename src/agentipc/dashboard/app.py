@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -115,14 +116,21 @@ def create_app(
 
 
 def _resolve_static_dir(static_dir: str | Path | None) -> Path | None:
-    if static_dir is None:
-        candidate = Path(__file__).resolve().parents[3] / "dashboard"
-    else:
+    if static_dir is not None:
         candidate = Path(static_dir)
+        if not candidate.exists() or not candidate.is_dir():
+            return None
+        return candidate
 
-    if not candidate.exists() or not candidate.is_dir():
-        return None
-    return candidate
+    source_candidate = Path(__file__).resolve().parents[3] / "dashboard"
+    if source_candidate.exists() and source_candidate.is_dir():
+        return source_candidate
+
+    installed_candidate = Path(sys.prefix) / "share" / "agentipc" / "dashboard"
+    if installed_candidate.exists() and installed_candidate.is_dir():
+        return installed_candidate
+
+    return None
 
 
 def _find_ready_run_dir(results_root: Path, run_id: str) -> Path | None:

@@ -39,3 +39,10 @@ agentipc = "agentipc.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.data-files]
+"share/agentipc/dashboard" = [
+    "dashboard/index.html",
+    "dashboard/app.js",
+    "dashboard/styles.css",
+]
