@@ -128,35 +128,72 @@ def _render_e5(summary: dict[str, Any]) -> str:
 
 
 def _render_e6(summary: dict[str, Any]) -> str:
+    provider = summary.get("provider", {})
+    timeout_sec = provider.get("timeout_sec")
+    max_retries = provider.get("max_retries")
+    provider_model = provider.get("llm_model")
+    provider_region = provider.get("api_region")
+    git_sha = summary.get("git_sha")
+
     lines = [
         "# E6 Real Provider Memory Fast Path",
         "",
         f"Overall pass: **{summary['passed']}**",
+        f"Infrastructure valid: **{summary.get('infrastructure_valid', True)}**",
+        f"Comparison valid: **{summary.get('comparison_valid', True)}**",
+        f"Fast-path safety pass: **{summary.get('fast_path_safety_pass', summary['passed'])}**",
+        f"Infrastructure failures: **{summary.get('infrastructure_failure_count', 0)}**",
         f"Workload: {summary['workload']}",
         f"Match: {summary['match_method']}",
-        "",
     ]
+    if provider_model:
+        lines.append(f"LLM model: `{provider_model}`")
+    if provider_region:
+        lines.append(f"API region: `{provider_region}`")
+    if timeout_sec is not None:
+        lines.append(f"Provider timeout: **{float(timeout_sec):.0f}s**")
+    if max_retries is not None:
+        lines.append(f"Provider max retries: **{int(max_retries)}**")
+    if git_sha:
+        lines.append(f"Git SHA: `{git_sha}`")
+    if summary.get("infrastructure_failure_types"):
+        lines.append(
+            "Infrastructure failure types: "
+            + ", ".join(f"`{item}`" for item in summary["infrastructure_failure_types"])
+        )
+    lines.append("")
+
     for group in ("knowledge", "codeact"):
         data = summary["groups"][group]
         lines.extend([
             f"## {group.title()}",
             "",
-            "| Config | Eval pass | Provider tokens | LLM calls | Wire tokens | Tool calls | Mean latency ms | Fast hits | Harmful rate |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+            f"Comparison valid: **{data.get('comparison_valid', True)}**",
+            "",
+            "| Config | Eval pass (all) | Eval pass (non-infra) | Infra failures | Provider tokens | LLM calls | Wire tokens | Tool calls | Mean latency ms | Fast hits | Strict memory mismatch | Validated fast-path harmful |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ])
         for name in ("C", "D", "D-Fast"):
             item = data["configs"][name]
             lines.append(
                 f"| {name} | {item['evaluation_pass_rate']:.1%} | "
+                f"{item.get('evaluation_pass_rate_excluding_infrastructure', item['evaluation_pass_rate']):.1%} | "
+                f"{item.get('infrastructure_failure_count', 0)} | "
                 f"{item['total_llm_tokens']} | {item['total_llm_calls']} | "
                 f"{item['total_wire_tokens']} | {item['total_tool_calls']} | "
                 f"{item['mean_latency_ms']:.3f} | {item['total_fast_path_hits']} | "
-                f"{item['wrong_harmful_memory_rate']:.1%} |"
+                f"{item.get('strict_memory_mismatch_count', item.get('total_memory_harmful', 0))} | "
+                f"{item.get('validated_fast_path_harmful_rate', item.get('wrong_harmful_memory_rate', 0)):.1%} |"
             )
         delta = data["c_vs_d_fast"]
+        delta_heading = (
+            "C vs D-Fast:"
+            if data.get("comparison_valid", True)
+            else "C vs D-Fast (diagnostic only; comparison invalid):"
+        )
         lines.extend([
             "",
-            "C vs D-Fast:",
+            delta_heading,
             f"- Provider prompt token saving: {delta['provider_prompt_token_saving_pct']:.2f}%",
             f"- Provider total token saving: {delta['provider_total_token_saving_pct']:.2f}%",
             f"- LLM call reduction: {delta['llm_call_reduction_pct']:.2f}%",
@@ -165,6 +202,16 @@ def _render_e6(summary: dict[str, Any]) -> str:
             f"- 0% repeat control fast hits: {data['zero_repeat_control']['total_fast_path_hits']}",
             "",
         ])
+
+    lines.extend(
+        [
+            "Strict memory mismatch means the regenerated answer string differed from "
+            "the historical answer; it is not an evaluator failure.",
+            "",
+            "Validated fast-path harmful is evaluator-based and applies only to "
+            "fast-path hits.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 

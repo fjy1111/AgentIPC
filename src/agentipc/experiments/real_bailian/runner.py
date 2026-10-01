@@ -62,6 +62,10 @@ from agentipc.state.plan_vector import PLAN_VECTOR_DIM, encode_plan_vector
 
 
 _PHASE = "calibration"
+REAL_API_TIMEOUT_SEC = 120.0
+# OpenAICompatibleProvider fixes max_retries=0 internally.
+REAL_API_MAX_RETRIES = 0
+
 
 def run_calibration(
     *,
@@ -247,12 +251,14 @@ def build_recording_provider_bundle(
         model=config.llm_model,
         api_key=config.api_key,
         base_url=config.base_url,
+        timeout_sec=REAL_API_TIMEOUT_SEC,
     )
     embedding = OpenAICompatibleEmbeddingProvider(
         model=config.embedding_model,
         dim=config.embedding_dim,
         api_key=config.api_key,
         base_url=config.base_url,
+        timeout_sec=REAL_API_TIMEOUT_SEC,
     )
     return (
         RecordingLLMProvider(llm, model=config.llm_model),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,11 @@ from agentipc.evaluation.trace import TraceLogger
 from agentipc.experiments.real_bailian.config import load_real_bailian_config
 from agentipc.experiments.real_bailian.evaluate import evaluate_normalized_knowledge_answer
 from agentipc.experiments.real_bailian.recording_executor import RecordingExecutorAgent
-from agentipc.experiments.real_bailian.runner import build_recording_provider_bundle
+from agentipc.experiments.real_bailian.runner import (
+    REAL_API_MAX_RETRIES,
+    REAL_API_TIMEOUT_SEC,
+    build_recording_provider_bundle,
+)
 from agentipc.memory.service import MemoryService
 from agentipc.memory.sqlite_store import SQLiteMemoryStore
 from agentipc.memory.vector_index import VectorIndex
@@ -38,6 +43,52 @@ _CONFIGS: tuple[tuple[str, ExperimentConfig, bool], ...] = (
     ("D-Fast", EXPERIMENT_D, True),
 )
 
+_INFRASTRUCTURE_ERROR_TYPES = frozenset(
+    {
+        "APITimeoutError",
+        "APIConnectionError",
+        "RateLimitError",
+        "InternalServerError",
+        "ServiceUnavailableError",
+    }
+)
+
+
+def _read_git_sha(root: Path) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    sha = completed.stdout.strip()
+    if len(sha) != 40 or any(char not in "0123456789abcdef" for char in sha):
+        return None
+    return sha
+
+
+def _is_infrastructure_failure(row: dict[str, Any]) -> bool:
+    if bool(row.get("runtime_success")):
+        return False
+    error = row.get("error")
+    return (
+        type(error) is dict
+        and error.get("type") in _INFRASTRUCTURE_ERROR_TYPES
+    )
+
+
+def _comparison_valid(configs: dict[str, dict[str, Any]]) -> bool:
+    return bool(
+        all(item["infrastructure_failure_count"] == 0 for item in configs.values())
+        and all(item["runtime_success_rate"] == 1.0 for item in configs.values())
+    )
+
 
 def run_e6(
     *,
@@ -52,6 +103,12 @@ def run_e6(
     secret = load_real_bailian_config()
     llm_recorder, embedding_recorder = build_recording_provider_bundle(secret)
     provider_bundle = ProviderBundle(llm=llm_recorder, embedding=embedding_recorder)
+    provider_metadata = {
+        **secret.public_fields(),
+        "timeout_sec": REAL_API_TIMEOUT_SEC,
+        "max_retries": REAL_API_MAX_RETRIES,
+    }
+    git_sha = _read_git_sha(root)
 
     knowledge_tasks = load_knowledge_tasks(root / "scenarios/knowledge_chain/tasks.json")
     knowledge_base = [task for task in knowledge_tasks if 1 <= task.round <= 5]
@@ -114,7 +171,12 @@ def run_e6(
                 )
             )
 
-    return rows, _aggregate_e6(rows, repeat=repeat)
+    return rows, _aggregate_e6(
+        rows,
+        repeat=repeat,
+        provider=provider_metadata,
+        git_sha=git_sha,
+    )
 
 
 def _run_knowledge_config(
@@ -348,7 +410,13 @@ def _row(
     }
 
 
-def _aggregate_e6(rows: list[dict[str, Any]], *, repeat: int) -> dict[str, Any]:
+def _aggregate_e6(
+    rows: list[dict[str, Any]],
+    *,
+    repeat: int,
+    provider: dict[str, Any] | None = None,
+    git_sha: str | None = None,
+) -> dict[str, Any]:
     groups: dict[str, Any] = {}
     for group in ("knowledge", "codeact"):
         group_rows = [row for row in rows if row["group"] == group]
@@ -359,6 +427,7 @@ def _aggregate_e6(rows: list[dict[str, Any]], *, repeat: int) -> dict[str, Any]:
         d_fast_rows = [row for row in group_rows if row["config"] == "D-Fast"]
         groups[group] = {
             "configs": configs,
+            "comparison_valid": _comparison_valid(configs),
             "c_vs_d_fast": _delta(configs["C"], configs["D-Fast"]),
             "d_vs_d_fast": _delta(configs["D"], configs["D-Fast"]),
             "zero_repeat_control": _aggregate_rows(
@@ -376,11 +445,27 @@ def _aggregate_e6(rows: list[dict[str, Any]], *, repeat: int) -> dict[str, Any]:
     overall_fast = [row for row in rows if row["config"] == "D-Fast"]
     zero_control = _aggregate_rows([row for row in overall_fast if row["phase"] == "new"])
     repeat_half = _aggregate_rows([row for row in overall_fast if row["phase"] == "repeat"])
-    passed = bool(
-        all(item["evaluation_pass_rate"] == 1.0 for item in overall_configs.values())
+
+    infrastructure_failure_count = sum(
+        item["infrastructure_failure_count"] for item in overall_configs.values()
+    )
+    infrastructure_failure_types = sorted(
+        {
+            error_type
+            for item in overall_configs.values()
+            for error_type in item["infrastructure_failure_types"]
+        }
+    )
+    infrastructure_valid = infrastructure_failure_count == 0
+    comparison_valid = _comparison_valid(overall_configs)
+    fast_path_safety_pass = bool(
+        overall_configs["D-Fast"]["evaluation_pass_rate_excluding_infrastructure"] == 1.0
         and zero_control["total_fast_path_hits"] == 0
+        and repeat_half["total_fast_path_hits"] == repeat_half["task_count"]
         and repeat_half["validated_fast_path_harmful_count"] == 0
     )
+    passed = bool(comparison_valid and fast_path_safety_pass)
+
     return {
         "experiment": "E6",
         "repeat": repeat,
@@ -388,9 +473,17 @@ def _aggregate_e6(rows: list[dict[str, Any]], *, repeat: int) -> dict[str, Any]:
         "repeat_ratio": 0.5,
         "match_method": "exact task_topic + evaluator-validated RESULT",
         "passed": passed,
+        "infrastructure_valid": infrastructure_valid,
+        "infrastructure_failure_count": infrastructure_failure_count,
+        "infrastructure_failure_types": infrastructure_failure_types,
+        "comparison_valid": comparison_valid,
+        "fast_path_safety_pass": fast_path_safety_pass,
+        "provider": {} if provider is None else provider,
+        "git_sha": git_sha,
         "groups": groups,
         "overall": {
             "configs": overall_configs,
+            "comparison_valid": comparison_valid,
             "c_vs_d_fast": _delta(overall_configs["C"], overall_configs["D-Fast"]),
             "d_vs_d_fast": _delta(overall_configs["D"], overall_configs["D-Fast"]),
             "zero_repeat_control": zero_control,
@@ -407,13 +500,38 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     def total(metric: str) -> float:
         return sum(float(row["metrics"].get(metric, 0)) for row in rows)
 
+    infrastructure_rows = [row for row in rows if _is_infrastructure_failure(row)]
+    non_infrastructure_rows = [
+        row for row in rows if not _is_infrastructure_failure(row)
+    ]
+    infrastructure_failure_types = sorted(
+        {
+            str(row["error"]["type"])
+            for row in infrastructure_rows
+            if type(row.get("error")) is dict and row["error"].get("type")
+        }
+    )
+
     fast_hits = int(total("fast_path_hit_count"))
     validated_effective = sum(int(row["validated_fast_path_effective"]) for row in rows)
     validated_harmful = sum(int(row["validated_fast_path_harmful"]) for row in rows)
+    memory_used = int(total("memory_used"))
+    strict_memory_mismatches = int(total("memory_harmful"))
+    validated_harmful_rate = validated_harmful / fast_hits if fast_hits else 0.0
+    non_infra_eval_rate = (
+        sum(bool(row["evaluation_pass"]) for row in non_infrastructure_rows)
+        / len(non_infrastructure_rows)
+        if non_infrastructure_rows
+        else 0.0
+    )
     return {
         "task_count": n,
         "runtime_success_rate": sum(bool(row["runtime_success"]) for row in rows) / n,
         "evaluation_pass_rate": sum(bool(row["evaluation_pass"]) for row in rows) / n,
+        "evaluation_pass_rate_excluding_infrastructure": non_infra_eval_rate,
+        "infrastructure_failure_count": len(infrastructure_rows),
+        "infrastructure_failure_rate": len(infrastructure_rows) / n,
+        "infrastructure_failure_types": infrastructure_failure_types,
         "total_llm_prompt_tokens": int(total("llm_prompt_tokens")),
         "total_llm_completion_tokens": int(total("llm_completion_tokens")),
         "total_llm_tokens": int(total("llm_total_tokens")),
@@ -422,15 +540,22 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "total_wire_bytes": int(total("wire_bytes")),
         "total_tool_calls": int(total("tool_call_count")),
         "total_memory_retrieved": int(total("memory_retrieved")),
-        "total_memory_used": int(total("memory_used")),
+        "total_memory_used": memory_used,
         "total_memory_effective": int(total("memory_effective")),
-        "total_memory_harmful": int(total("memory_harmful")),
+        "total_memory_harmful": strict_memory_mismatches,
+        "strict_memory_mismatch_count": strict_memory_mismatches,
+        "strict_memory_mismatch_rate": (
+            strict_memory_mismatches / memory_used if memory_used else 0.0
+        ),
         "total_fast_path_hits": fast_hits,
         "fast_path_hit_rate": fast_hits / n,
         "validated_fast_path_effective_count": validated_effective,
         "validated_fast_path_harmful_count": validated_harmful,
-        "validated_fast_path_effective_rate": validated_effective / fast_hits if fast_hits else 0.0,
-        "wrong_harmful_memory_rate": validated_harmful / fast_hits if fast_hits else 0.0,
+        "validated_fast_path_effective_rate": (
+            validated_effective / fast_hits if fast_hits else 0.0
+        ),
+        "validated_fast_path_harmful_rate": validated_harmful_rate,
+        "wrong_harmful_memory_rate": validated_harmful_rate,
         "total_latency_ms": total("latency_ms"),
         "mean_latency_ms": total("latency_ms") / n,
     }
