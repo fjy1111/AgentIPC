@@ -192,6 +192,7 @@ def _run_knowledge_config(
                         task_hash=record.task_hash,
                         runtime_success=record.run_result.success,
                         evaluation_pass=evaluation.success,
+                        error=record.run_result.error,
                         metrics=dict(record.run_result.metrics),
                     )
                 )
@@ -289,6 +290,7 @@ def _run_codeact_config(
                         task_hash=record.task_hash,
                         runtime_success=record.run_result.success,
                         evaluation_pass=evaluation_pass,
+                        error=record.run_result.error,
                         metrics=dict(record.run_result.metrics),
                     )
                 )
@@ -324,6 +326,7 @@ def _row(
     task_hash: str,
     runtime_success: bool,
     evaluation_pass: bool,
+    error: dict[str, Any] | None,
     metrics: dict[str, Any],
 ) -> dict[str, Any]:
     fast_hit = int(metrics.get("fast_path_hit_count", 0))
@@ -338,6 +341,7 @@ def _row(
         "task_hash": task_hash,
         "runtime_success": runtime_success,
         "evaluation_pass": evaluation_pass,
+        "error": error,
         "validated_fast_path_effective": int(bool(fast_hit and evaluation_pass)),
         "validated_fast_path_harmful": int(bool(fast_hit and not evaluation_pass)),
         "metrics": metrics,
