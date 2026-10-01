@@ -12,6 +12,8 @@ def render_report(summary: dict[str, Any]) -> str:
         return _render_e5(summary)
     if summary.get("experiment") == "E6":
         return _render_e6(summary)
+    if summary.get("experiment") == "E7":
+        return _render_e7(summary)
     if "inproc" in summary and "shm" in summary:
         return _render_e4(summary)
     raise ValueError("unsupported formal experiment summary")
@@ -214,6 +216,70 @@ def _render_e6(summary: dict[str, Any]) -> str:
     )
     return "\n".join(lines) + "\n"
 
+
+
+
+def _render_e7(summary: dict[str, Any]) -> str:
+    lines = [
+        "# E7 Cross-Process Non-Text State Exchange",
+        "",
+        f"Overall pass: **{summary['passed']}**",
+        f"Correctness pass: **{summary['correctness_pass']}**",
+        f"Accounting pass: **{summary['accounting_pass']}**",
+        f"Repeat: **{summary['repeat']}**",
+        f"Token method: `{summary['token_method']}`",
+        f"Process model: {summary['process_model']}",
+        f"IPC transport: {summary['ipc_transport']}",
+        f"Consumer operation: `{summary['consumer_operation']}`",
+        "",
+        "| State bytes | Vector dim | JSON wire bytes | SHM+Ref wire bytes | "
+        "Wire byte saving | JSON wire tokens | SHM+Ref wire tokens | "
+        "Wire token saving | JSON E2E ms | SHM E2E ms | E2E latency reduction | "
+        "SHM state bytes | Correctness |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+
+    for _, payload in sorted(
+        summary["payloads"].items(),
+        key=lambda item: int(item[0]),
+    ):
+        json_mode = payload["modes"]["json_materialized"]
+        shm_mode = payload["modes"]["shm_ref"]
+        savings = payload["savings"]
+        correctness = min(json_mode["success_rate"], shm_mode["success_rate"])
+        lines.append(
+            f"| {payload['state_bytes']} | {payload['vector_dim']} | "
+            f"{json_mode['mean_wire_bytes']:.2f} | "
+            f"{shm_mode['mean_wire_bytes']:.2f} | "
+            f"{savings['wire_byte_saving_pct']:.2f}% | "
+            f"{json_mode['mean_wire_tokens']:.2f} | "
+            f"{shm_mode['mean_wire_tokens']:.2f} | "
+            f"{savings['wire_token_saving_pct']:.2f}% | "
+            f"{json_mode['mean_end_to_end_ms']:.3f} | "
+            f"{shm_mode['mean_end_to_end_ms']:.3f} | "
+            f"{savings['end_to_end_latency_reduction_pct']:.2f}% | "
+            f"{shm_mode['mean_state_bytes']:.2f} | "
+            f"{correctness:.1%} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Measurement scope",
+            "",
+            f"- Timing: {summary['timing_scope']}",
+            f"- Wire accounting: {summary['wire_scope']}",
+            "",
+            "AgentIPC does **not** claim zero-copy in E7. "
+            "The current `StateHub.resolve_array()` returns an owned ndarray copy; "
+            "the measured mechanism is binary non-text state exchange through "
+            "Linux SharedMemory + StateRef, avoiding materialization of the numeric "
+            "state into JSON on the Agent-to-Agent control path.",
+            "",
+            summary["note"],
+        ]
+    )
+    return "\n".join(lines) + "\n"
 
 def _render_e4(summary: dict[str, Any]) -> str:
     lines = [

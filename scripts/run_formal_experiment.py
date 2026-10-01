@@ -14,7 +14,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "experiment",
-        choices=["e1", "e2", "e3", "e4", "e5", "e6"],
+        choices=["e1", "e2", "e3", "e4", "e5", "e6", "e7"],
     )
     parser.add_argument("--repeat", type=int, default=3)
     parser.add_argument("--provider", choices=["openai", "mock"], default="mock")
@@ -44,6 +44,7 @@ def main() -> None:
         "e4": "e4-shm",
         "e5": "e5-communication",
         "e6": "e6-memory-fast-path",
+        "e7": "e7-state-exchange",
     }
     root = Path("results/formal") / (
         labels[args.experiment]
@@ -86,6 +87,10 @@ def main() -> None:
             result_dir=root,
             repeat=args.repeat,
         )
+    elif args.experiment == "e7":
+        from agentipc.experiments.formal.e7_state_exchange import run_e7
+
+        rows, summary = run_e7(repeat=args.repeat)
     elif args.experiment == "e1":
         from agentipc.experiments.formal.factory import build_factory
 
