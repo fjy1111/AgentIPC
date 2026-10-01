@@ -1,0 +1,40 @@
+{
+  "experiment": "E3",
+  "repeat": 10,
+  "passed": true,
+  "pass_count": 10,
+  "pass_rate": 1.0,
+  "round2": {
+    "evaluation_pass_rate": 1.0,
+    "identity_operation_rate": 0.0,
+    "mean_latency_ms": 20987.665292700003,
+    "mean_tokens": 1650.4,
+    "mean_protocol_bytes": 10431.1,
+    "mean_state_bytes": 256.0,
+    "mean_tool_calls": 1.0,
+    "mean_repeated_tool_calls": 0.0,
+    "mean_memory_retrieved": 0.0,
+    "mean_memory_used": 0.0,
+    "strict_memory_effective_rate": 0.0,
+    "validated_memory_effective_rate": 0.0
+  },
+  "round8": {
+    "evaluation_pass_rate": 1.0,
+    "identity_operation_rate": 1.0,
+    "mean_latency_ms": 19879.3707526,
+    "mean_tokens": 1560.0,
+    "mean_protocol_bytes": 9973.5,
+    "mean_state_bytes": 256.0,
+    "mean_tool_calls": 0.0,
+    "mean_repeated_tool_calls": 0.0,
+    "mean_memory_retrieved": 1.0,
+    "mean_memory_used": 1.0,
+    "strict_memory_effective_rate": 1.0,
+    "validated_memory_effective_rate": 1.0
+  },
+  "delta": {
+    "latency_reduction_pct": 5.2806947540062685,
+    "token_reduction_pct": 5.477460009694625,
+    "tool_call_reduction_pct": 100.0
+  }
+}

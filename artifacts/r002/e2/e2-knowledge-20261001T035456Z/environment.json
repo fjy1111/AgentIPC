@@ -1,0 +1,8 @@
+{
+  "python": "3.11.6 (main, Dec 25 2025, 19:22:33) [GCC 12.3.1 (openEuler 12.3.1-105.oe2403sp3)]",
+  "platform": "Linux-6.6.0-132.0.0.111.oe2403sp3.x86_64-x86_64-with-glibc2.38",
+  "repeat": 10,
+  "provider": "openai",
+  "experiment": "e2",
+  "real_api": true
+}

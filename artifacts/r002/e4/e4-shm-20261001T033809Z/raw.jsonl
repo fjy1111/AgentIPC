@@ -1,0 +1,6 @@
+{"experiment": "inproc", "repeat": 0, "latency_ms": 0.22338399867294356, "state_bytes": 256, "transfer_metrics": {"transport": "inproc", "resolved": true}}
+{"experiment": "inproc", "repeat": 1, "latency_ms": 0.10251499770674855, "state_bytes": 256, "transfer_metrics": {"transport": "inproc", "resolved": true}}
+{"experiment": "inproc", "repeat": 2, "latency_ms": 0.04360299863037653, "state_bytes": 256, "transfer_metrics": {"transport": "inproc", "resolved": true}}
+{"experiment": "shm", "repeat": 0, "latency_ms": 3.3289530001638923, "state_bytes": 256, "transfer_metrics": {"transport": "shm", "resolved": true}}
+{"experiment": "shm", "repeat": 1, "latency_ms": 0.35207900145906024, "state_bytes": 256, "transfer_metrics": {"transport": "shm", "resolved": true}}
+{"experiment": "shm", "repeat": 2, "latency_ms": 0.3181139982189052, "state_bytes": 256, "transfer_metrics": {"transport": "shm", "resolved": true}}

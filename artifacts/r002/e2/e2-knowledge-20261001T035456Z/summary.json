@@ -1,0 +1,35 @@
+{
+  "experiment": "E2",
+  "repeat": 10,
+  "passed": true,
+  "pass_count": 10,
+  "pass_rate": 1.0,
+  "round2": {
+    "evaluation_pass_rate": 1.0,
+    "mean_latency_ms": 35487.784073400006,
+    "mean_tokens": 2478.9,
+    "mean_protocol_bytes": 17014.5,
+    "mean_state_bytes": 256.0,
+    "mean_tool_calls": 0.0,
+    "mean_memory_retrieved": 0.0,
+    "mean_memory_used": 0.0,
+    "strict_memory_effective_rate": 0.0,
+    "validated_memory_effective_rate": 0.0
+  },
+  "round8": {
+    "evaluation_pass_rate": 1.0,
+    "mean_latency_ms": 41073.1301162,
+    "mean_tokens": 2787.2,
+    "mean_protocol_bytes": 18181.5,
+    "mean_state_bytes": 256.0,
+    "mean_tool_calls": 0.0,
+    "mean_memory_retrieved": 1.0,
+    "mean_memory_used": 1.0,
+    "strict_memory_effective_rate": 0.4,
+    "validated_memory_effective_rate": 1.0
+  },
+  "delta": {
+    "latency_reduction_pct": -15.738785017536532,
+    "token_reduction_pct": -12.436968010004426
+  }
+}
