@@ -8,6 +8,10 @@ def render_report(summary: dict[str, Any]) -> str:
         return _render_e1(summary)
     if summary.get("experiment") in {"E2", "E3"}:
         return _render_continuous_task(summary)
+    if summary.get("experiment") == "E5":
+        return _render_e5(summary)
+    if summary.get("experiment") == "E6":
+        return _render_e6(summary)
     if "inproc" in summary and "shm" in summary:
         return _render_e4(summary)
     raise ValueError("unsupported formal experiment summary")
@@ -87,6 +91,80 @@ def _render_continuous_task(summary: dict[str, Any]) -> str:
     )
     if "tool_call_reduction_pct" in delta:
         lines.append(f"- Tool-call reduction: {delta['tool_call_reduction_pct']:.2f}%")
+    return "\n".join(lines) + "\n"
+
+
+def _render_e5(summary: dict[str, Any]) -> str:
+    lines = [
+        "# E5 Communication Cost Benchmark",
+        "",
+        f"Tokenizer: `{summary['token_method']}`",
+        "",
+        "| Payload | Mode | Wire chars | Wire tokens | Wire bytes | Artifact payload bytes |",
+        "|---:|---|---:|---:|---:|---:|",
+    ]
+    for _, payload in sorted(summary["payloads"].items(), key=lambda item: int(item[0])):
+        size = payload["payload_bytes"]
+        for mode in ("A", "B", "C"):
+            item = payload["modes"][mode]
+            lines.append(
+                f"| {size} | {mode} | {item['mean_wire_chars']:.2f} | "
+                f"{item['mean_wire_tokens']:.2f} | {item['mean_wire_bytes']:.2f} | "
+                f"{item['mean_artifact_payload_bytes']:.2f} |"
+            )
+        lines.append("")
+        lines.append(
+            f"- {size} B vs A: token {payload['savings_vs_A']['B']['wire_token_saving_pct']:.2f}%, "
+            f"byte {payload['savings_vs_A']['B']['wire_byte_saving_pct']:.2f}%"
+        )
+        lines.append(
+            f"- {size} C vs A: token {payload['savings_vs_A']['C']['wire_token_saving_pct']:.2f}%, "
+            f"byte {payload['savings_vs_A']['C']['wire_byte_saving_pct']:.2f}%, "
+            f"total-transfer {payload['savings_vs_A']['C']['total_transfer_saving_pct']:.2f}%"
+        )
+        lines.append("")
+    lines.append(summary["note"])
+    return "\n".join(lines) + "\n"
+
+
+def _render_e6(summary: dict[str, Any]) -> str:
+    lines = [
+        "# E6 Real Provider Memory Fast Path",
+        "",
+        f"Overall pass: **{summary['passed']}**",
+        f"Workload: {summary['workload']}",
+        f"Match: {summary['match_method']}",
+        "",
+    ]
+    for group in ("knowledge", "codeact"):
+        data = summary["groups"][group]
+        lines.extend([
+            f"## {group.title()}",
+            "",
+            "| Config | Eval pass | Provider tokens | LLM calls | Wire tokens | Tool calls | Mean latency ms | Fast hits | Harmful rate |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ])
+        for name in ("C", "D", "D-Fast"):
+            item = data["configs"][name]
+            lines.append(
+                f"| {name} | {item['evaluation_pass_rate']:.1%} | "
+                f"{item['total_llm_tokens']} | {item['total_llm_calls']} | "
+                f"{item['total_wire_tokens']} | {item['total_tool_calls']} | "
+                f"{item['mean_latency_ms']:.3f} | {item['total_fast_path_hits']} | "
+                f"{item['wrong_harmful_memory_rate']:.1%} |"
+            )
+        delta = data["c_vs_d_fast"]
+        lines.extend([
+            "",
+            "C vs D-Fast:",
+            f"- Provider prompt token saving: {delta['provider_prompt_token_saving_pct']:.2f}%",
+            f"- Provider total token saving: {delta['provider_total_token_saving_pct']:.2f}%",
+            f"- LLM call reduction: {delta['llm_call_reduction_pct']:.2f}%",
+            f"- Wire token saving: {delta['wire_token_saving_pct']:.2f}%",
+            f"- Latency reduction: {delta['latency_reduction_pct']:.2f}%",
+            f"- 0% repeat control fast hits: {data['zero_repeat_control']['total_fast_path_hits']}",
+            "",
+        ])
     return "\n".join(lines) + "\n"
 
 

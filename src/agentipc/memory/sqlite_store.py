@@ -100,6 +100,12 @@ FROM memories
 ORDER BY created_at ASC, memory_id ASC
 """
 
+_UPDATE_PAYLOAD_SQL = """
+UPDATE memories
+SET payload_json = ?
+WHERE memory_id = ?
+"""
+
 _RECORD_USE_SQL = """
 UPDATE memories
 SET
@@ -216,6 +222,32 @@ class SQLiteMemoryStore:
         if row is None:
             return None
         return _row_to_record(row)
+
+    def update_payload(
+        self,
+        memory_id: str,
+        payload: dict[str, Any],
+    ) -> MemoryRecord:
+        connection = self._ensure_open()
+        validated_id = _validate_memory_id(memory_id)
+        if type(payload) is not dict:
+            raise TypeError("payload must be a dict[str, Any]")
+
+        payload_json = _json_dumps(payload)
+        with connection:
+            cursor = connection.execute(
+                _UPDATE_PAYLOAD_SQL,
+                (payload_json, validated_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(validated_id)
+            row = connection.execute(
+                _SELECT_BY_ID_SQL,
+                (validated_id,),
+            ).fetchone()
+            if row is None:  # pragma: no cover
+                raise KeyError(validated_id)
+            return _row_to_record(row)
 
     def record_use(
         self,

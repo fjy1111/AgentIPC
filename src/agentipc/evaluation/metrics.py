@@ -16,17 +16,22 @@ class MetricsSnapshot(BaseModel):
     message_count: StrictNonNegativeInt = 0
     text_chars: StrictNonNegativeInt = 0
     text_tokens: StrictNonNegativeInt = 0
+    wire_chars: StrictNonNegativeInt = 0
+    wire_tokens: StrictNonNegativeInt = 0
+    wire_bytes: StrictNonNegativeInt = 0
     protocol_bytes: StrictNonNegativeInt = 0
 
     state_transfer_count: StrictNonNegativeInt = 0
     state_bytes: StrictNonNegativeInt = 0
 
     artifact_ref_count: StrictNonNegativeInt = 0
+    artifact_payload_bytes: StrictNonNegativeInt = 0
 
     memory_retrieved: StrictNonNegativeInt = 0
     memory_used: StrictNonNegativeInt = 0
     memory_effective: StrictNonNegativeInt = 0
     memory_harmful: StrictNonNegativeInt = 0
+    fast_path_hit_count: StrictNonNegativeInt = 0
 
     tool_call_count: StrictNonNegativeInt = 0
     repeated_tool_call_count: StrictNonNegativeInt = 0
@@ -74,14 +79,19 @@ class MetricsCollector:
             "message_count",
             "text_chars",
             "text_tokens",
+            "wire_chars",
+            "wire_tokens",
+            "wire_bytes",
             "protocol_bytes",
             "state_transfer_count",
             "state_bytes",
             "artifact_ref_count",
+            "artifact_payload_bytes",
             "memory_retrieved",
             "memory_used",
             "memory_effective",
             "memory_harmful",
+            "fast_path_hit_count",
             "tool_call_count",
             "repeated_tool_call_count",
         }

@@ -12,7 +12,10 @@ from agentipc.experiments.formal import render_report, run_e1
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("experiment", choices=["e1", "e2", "e3", "e4"])
+    parser.add_argument(
+        "experiment",
+        choices=["e1", "e2", "e3", "e4", "e5", "e6"],
+    )
     parser.add_argument("--repeat", type=int, default=3)
     parser.add_argument("--provider", choices=["openai", "mock"], default="mock")
     parser.add_argument("--input", type=Path)
@@ -25,11 +28,11 @@ def main() -> None:
         parser.error("--input is supported only for e1")
 
     needs_real_api = (
-        args.experiment in {"e2", "e3"}
+        args.experiment in {"e2", "e3", "e6"}
         or (args.experiment == "e1" and args.provider == "openai")
     )
-    if args.experiment in {"e2", "e3"} and args.provider != "openai":
-        parser.error("e2/e3 require --provider openai")
+    if args.experiment in {"e2", "e3", "e6"} and args.provider != "openai":
+        parser.error("e2/e3/e6 require --provider openai")
     if needs_real_api and not args.confirm_real_api:
         print("Real API execution requires --confirm-real-api", file=sys.stderr)
         raise SystemExit(2)
@@ -39,6 +42,8 @@ def main() -> None:
         "e2": "e2-knowledge",
         "e3": "e3-codeact",
         "e4": "e4-shm",
+        "e5": "e5-communication",
+        "e6": "e6-memory-fast-path",
     }
     root = Path("results/formal") / (
         labels[args.experiment]
@@ -69,6 +74,18 @@ def main() -> None:
                 "mean_state_bytes": sum(row["state_bytes"] for row in selected)
                 / len(selected),
             }
+    elif args.experiment == "e5":
+        from agentipc.experiments.formal.e5_communication import run_e5
+
+        rows, summary = run_e5(root=root / "work", repeat=args.repeat)
+    elif args.experiment == "e6":
+        from agentipc.experiments.formal.e6_memory_fast_path import run_e6
+
+        rows, summary = run_e6(
+            root=Path(".").resolve(),
+            result_dir=root,
+            repeat=args.repeat,
+        )
     elif args.experiment == "e1":
         from agentipc.experiments.formal.factory import build_factory
 

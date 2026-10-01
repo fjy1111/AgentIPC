@@ -2,6 +2,7 @@ import math
 
 from agentipc.artifacts.store import ArtifactStore
 from agentipc.evaluation.metrics import MetricsCollector
+from agentipc.evaluation.text_counter import TextCounter
 from agentipc.memory.models import MemoryRecord, MemoryType
 from agentipc.memory.service import MemoryService
 from agentipc.protocol.codec import encode
@@ -104,6 +105,8 @@ class Orchestrator:
         router: Router,
         *,
         text_transport: TextTransport | None = None,
+        wire_counter: TextCounter | None = None,
+        memory_fast_path: bool = False,
     ) -> None:
         if not isinstance(router, Router):
             raise TypeError("router must be a Router")
@@ -112,8 +115,17 @@ class Orchestrator:
             TextTransport,
         ):
             raise TypeError("text_transport must be a TextTransport or None")
+        if wire_counter is None:
+            wire_counter = TextCounter()
+        elif not isinstance(wire_counter, TextCounter):
+            raise TypeError("wire_counter must be a TextCounter or None")
+        if type(memory_fast_path) is not bool:
+            raise TypeError("memory_fast_path must be a bool")
+
         self._router = router
         self._text_transport = text_transport
+        self._wire_counter = wire_counter
+        self._memory_fast_path = memory_fast_path
 
     def run_task(
         self,
@@ -150,6 +162,11 @@ class Orchestrator:
             raise _StateHubConfigurationError(
                 "use_state=True requires ctx.state_hub to be a StateHub"
             )
+
+        if self._memory_fast_path and ctx.use_memory:
+            fast_result = self._try_memory_fast_path(task=task, ctx=ctx)
+            if fast_result is not None:
+                return fast_result
 
         plan_state_ref = None
         try:
@@ -371,6 +388,71 @@ class Orchestrator:
             if plan_state_ref is not None:
                 ctx.state_hub.release(plan_state_ref)
 
+    def _try_memory_fast_path(
+        self,
+        *,
+        task: str,
+        ctx: RunContext,
+    ) -> AgentEnvelope | None:
+        record = ctx.memory_service.get_exact_validated_result(task)
+        if record is None:
+            return None
+
+        historical_answer = record.payload.get("answer")
+        if type(historical_answer) is not str or historical_answer == "":
+            return None
+
+        cached_execution = record.payload.get("execution")
+        if type(cached_execution) is not dict:
+            return None
+        operation = cached_execution.get("operation")
+        if operation == "identity":
+            if "output" not in cached_execution:
+                return None
+        elif operation == "codeact":
+            if not _is_reusable_codeact_execution(cached_execution):
+                return None
+        else:
+            return None
+
+        ctx.memory_service.mark_used(record.memory_id, effective=True)
+        if isinstance(ctx.metrics, MetricsCollector):
+            ctx.metrics.increment("memory_retrieved")
+            ctx.metrics.increment("memory_used")
+            ctx.metrics.increment("memory_effective")
+            ctx.metrics.increment("fast_path_hit_count")
+
+        evidence_summary = record.payload.get("evidence_summary")
+        if type(evidence_summary) is not str:
+            evidence_summary = "Reused exact evaluator-validated RESULT memory."
+
+        return AgentEnvelope(
+            trace_id=ctx.trace_id,
+            task_id=ctx.task_id,
+            step_id="step-memory-fast-path",
+            sender=_RUNTIME_ID,
+            receiver=_RUNTIME_ID,
+            message_type=MessageType.RESULT,
+            action=ActionType.SUMMARIZE,
+            capability="memory_fast_path",
+            result={
+                "answer": historical_answer,
+                "evidence_summary": evidence_summary,
+                "fast_path": True,
+            },
+            status=MessageStatus.OK,
+            state_refs=[],
+            artifact_refs=[],
+            memory_refs=[
+                MemoryRef(
+                    memory_id=record.memory_id,
+                    score=1.0,
+                    match_type="exact_validated",
+                    summary=record.summary,
+                )
+            ],
+        )
+
     def _dispatch(
         self,
         request: AgentEnvelope,
@@ -401,14 +483,19 @@ class Orchestrator:
         self._record_structured_envelope(response, ctx)
         return response
 
-    @staticmethod
     def _record_structured_envelope(
+        self,
         envelope: AgentEnvelope,
         ctx: RunContext,
     ) -> None:
         if isinstance(ctx.metrics, MetricsCollector):
             payload = encode(envelope)
+            wire_text = payload.decode("utf-8")
+            count = self._wire_counter.count(wire_text)
             ctx.metrics.increment("message_count")
+            ctx.metrics.increment("wire_chars", count.text_chars)
+            ctx.metrics.increment("wire_tokens", count.text_tokens)
+            ctx.metrics.increment("wire_bytes", len(payload))
             ctx.metrics.increment("protocol_bytes", len(payload))
             if envelope.state_refs:
                 ctx.metrics.increment(
@@ -423,6 +510,10 @@ class Orchestrator:
                 ctx.metrics.increment(
                     "artifact_ref_count",
                     len(envelope.artifact_refs),
+                )
+                ctx.metrics.increment(
+                    "artifact_payload_bytes",
+                    sum(ref.size_bytes for ref in envelope.artifact_refs),
                 )
 
         ctx.trace_logger.log_envelope(envelope)

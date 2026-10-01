@@ -14,6 +14,9 @@ from agentipc.protocol.refs import MemoryRef
 from agentipc.providers.base import EmbeddingProvider
 
 
+_VALIDATION_PAYLOAD_KEY = "_agentipc_validation"
+
+
 class MemoryService:
     def __init__(
         self,
@@ -78,6 +81,52 @@ class MemoryService:
 
     def get(self, memory_id: str) -> MemoryRecord | None:
         return self.store.get(memory_id)
+
+    def mark_validated_result(
+        self,
+        memory_id: str,
+        *,
+        passed: bool,
+    ) -> MemoryRecord:
+        if not isinstance(memory_id, str):
+            raise TypeError("memory_id must be a str")
+        if memory_id == "":
+            raise ValueError("memory_id must be non-empty")
+        if type(passed) is not bool:
+            raise TypeError("passed must be a bool")
+
+        record = self.store.get(memory_id)
+        if record is None:
+            raise KeyError(memory_id)
+        if record.memory_type is not MemoryType.RESULT:
+            raise ValueError("only RESULT memory can be evaluator-validated")
+
+        payload = dict(record.payload)
+        payload[_VALIDATION_PAYLOAD_KEY] = {
+            "passed": passed,
+            "source": "external_evaluator",
+        }
+        return self.store.update_payload(memory_id, payload)
+
+    def get_exact_validated_result(self, task: str) -> MemoryRecord | None:
+        if not isinstance(task, str):
+            raise TypeError("task must be a str")
+        if task == "":
+            raise ValueError("task must be non-empty")
+
+        for record in reversed(self.store.list_records()):
+            if record.memory_type is not MemoryType.RESULT:
+                continue
+            if record.task_topic != task:
+                continue
+            validation = record.payload.get(_VALIDATION_PAYLOAD_KEY)
+            if (
+                type(validation) is dict
+                and validation.get("passed") is True
+                and validation.get("source") == "external_evaluator"
+            ):
+                return record
+        return None
 
     def retrieve(
         self,

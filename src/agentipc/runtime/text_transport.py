@@ -52,9 +52,25 @@ class TextTransport:
 
         if isinstance(ctx.metrics, MetricsCollector):
             count = self._text_counter.count(rendered)
+            payload = rendered.encode("utf-8")
             ctx.metrics.increment("message_count")
             ctx.metrics.increment("text_chars", count.text_chars)
             ctx.metrics.increment("text_tokens", count.text_tokens)
+            ctx.metrics.increment("wire_chars", count.text_chars)
+            ctx.metrics.increment("wire_tokens", count.text_tokens)
+            ctx.metrics.increment("wire_bytes", len(payload))
+            if envelope.state_refs:
+                ctx.metrics.increment("state_transfer_count", len(envelope.state_refs))
+                ctx.metrics.increment(
+                    "state_bytes",
+                    sum(ref.nbytes for ref in envelope.state_refs),
+                )
+            if envelope.artifact_refs:
+                ctx.metrics.increment("artifact_ref_count", len(envelope.artifact_refs))
+                ctx.metrics.increment(
+                    "artifact_payload_bytes",
+                    sum(ref.size_bytes for ref in envelope.artifact_refs),
+                )
 
         ctx.trace_logger.log_envelope(envelope)
         return rendered

@@ -57,6 +57,7 @@ def run_single(
     task: str,
     ctx: RunContext,
     agent_registry: AgentRegistry,
+    memory_fast_path: bool = False,
 ) -> RawRunRecord:
     """Execute one experiment configuration against one task.
 
@@ -96,6 +97,8 @@ def run_single(
         raise TypeError("ctx must be a RunContext")
     if not isinstance(agent_registry, AgentRegistry):
         raise TypeError("agent_registry must be an AgentRegistry")
+    if type(memory_fast_path) is not bool:
+        raise TypeError("memory_fast_path must be a bool")
 
     # Compute task hash (exact UTF-8 bytes, no normalization)
     task_hash = hashlib.sha256(task.encode("utf-8")).hexdigest()
@@ -120,6 +123,10 @@ def run_single(
 
     # Build orchestrator based on mode
     router = Router(agent_registry)
+    wire_counter = TextCounter()
+    # Warm tokenizer outside the measured task timer so instrumentation startup
+    # does not bias C/D against a zero-wire fast-path hit.
+    wire_counter.count("")
 
     if run_ctx.mode.value == "text":
         # TEXT mode requires TextTransport with reference resolution
@@ -129,13 +136,22 @@ def run_single(
             memory_service=run_ctx.memory_service,
         )
         text_transport = TextTransport(
-            text_counter=TextCounter(),
+            text_counter=wire_counter,
             resolver=resolver,
         )
-        orchestrator = Orchestrator(router, text_transport=text_transport)
+        orchestrator = Orchestrator(
+            router,
+            text_transport=text_transport,
+            wire_counter=wire_counter,
+            memory_fast_path=memory_fast_path,
+        )
     else:
         # STRUCTURED mode uses direct routing
-        orchestrator = Orchestrator(router)
+        orchestrator = Orchestrator(
+            router,
+            wire_counter=wire_counter,
+            memory_fast_path=memory_fast_path,
+        )
 
     # Execute task with timing
     timer = TaskTimer()
