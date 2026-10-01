@@ -1,0 +1,446 @@
+{
+  "codeact": {
+    "error": null,
+    "passed": true,
+    "rounds": [
+      {
+        "error": null,
+        "evaluation_error": null,
+        "evaluation_pass": true,
+        "execution_operation": "codeact",
+        "memory_validation": {
+          "memory_used": 0,
+          "runtime_memory_effective_strict": 0,
+          "runtime_memory_harmful_strict": 0,
+          "strict_vs_validated_discrepancy": false,
+          "validated_memory_effective": 0,
+          "validated_memory_harmful": 0
+        },
+        "metrics": {
+          "artifact_ref_count": 1,
+          "latency_ms": 29352.420484,
+          "llm_call_count": 2,
+          "llm_completion_tokens": 1547,
+          "llm_latency_ms": 28242.472903002636,
+          "llm_prompt_tokens": 549,
+          "llm_total_tokens": 2096,
+          "llm_usage_missing_count": 0,
+          "memory_effective": 0,
+          "memory_harmful": 0,
+          "memory_retrieved": 0,
+          "memory_used": 0,
+          "message_count": 8,
+          "protocol_bytes": 10538,
+          "repeated_tool_call_count": 0,
+          "state_bytes": 256,
+          "state_transfer_count": 1,
+          "success": true,
+          "text_chars": 0,
+          "text_tokens": 0,
+          "tool_call_count": 1
+        },
+        "round": 2,
+        "run_success": true,
+        "task_hash": "abf1f1d6bc8086be1cf6fb464febf17c8bf6d8eff359231ffb4d9c5eda0ba911"
+      },
+      {
+        "error": null,
+        "evaluation_error": null,
+        "evaluation_pass": true,
+        "execution_operation": "identity",
+        "memory_validation": {
+          "memory_used": 1,
+          "runtime_memory_effective_strict": 1,
+          "runtime_memory_harmful_strict": 0,
+          "strict_vs_validated_discrepancy": false,
+          "validated_memory_effective": 1,
+          "validated_memory_harmful": 0
+        },
+        "metrics": {
+          "artifact_ref_count": 1,
+          "latency_ms": 13687.199957,
+          "llm_call_count": 2,
+          "llm_completion_tokens": 598,
+          "llm_latency_ms": 12371.838066999771,
+          "llm_prompt_tokens": 548,
+          "llm_total_tokens": 1146,
+          "llm_usage_missing_count": 0,
+          "memory_effective": 1,
+          "memory_harmful": 0,
+          "memory_retrieved": 1,
+          "memory_used": 1,
+          "message_count": 8,
+          "protocol_bytes": 9955,
+          "repeated_tool_call_count": 0,
+          "state_bytes": 256,
+          "state_transfer_count": 1,
+          "success": true,
+          "text_chars": 0,
+          "text_tokens": 0,
+          "tool_call_count": 0
+        },
+        "round": 8,
+        "run_success": true,
+        "task_hash": "abf1f1d6bc8086be1cf6fb464febf17c8bf6d8eff359231ffb4d9c5eda0ba911"
+      }
+    ],
+    "strict_vs_validated_discrepancy_count": 0
+  },
+  "embedding_probe": {
+    "all_finite": true,
+    "dtype": "float32",
+    "error": null,
+    "model": "qwen3.7-text-embedding",
+    "passed": true,
+    "shape": [
+      2,
+      1024
+    ]
+  },
+  "knowledge": {
+    "error": null,
+    "passed": true,
+    "rounds": [
+      {
+        "answer_sha256": "49b10791bf10a89c97abf1df3f9934bf9f16e54a26d0b9ac0b95b029da8a6b9f",
+        "error": null,
+        "evaluation_pass": true,
+        "existing_evaluation_pass": true,
+        "matched_answer_contains": [
+          "nmcli device show"
+        ],
+        "memory_validation": {
+          "memory_used": 0,
+          "runtime_memory_effective_strict": 0,
+          "runtime_memory_harmful_strict": 0,
+          "strict_vs_validated_discrepancy": false,
+          "validated_memory_effective": 0,
+          "validated_memory_harmful": 0
+        },
+        "metrics": {
+          "artifact_ref_count": 1,
+          "latency_ms": 32704.009895,
+          "llm_call_count": 2,
+          "llm_completion_tokens": 1742,
+          "llm_latency_ms": 30804.822042002343,
+          "llm_prompt_tokens": 553,
+          "llm_total_tokens": 2295,
+          "llm_usage_missing_count": 0,
+          "memory_effective": 0,
+          "memory_harmful": 0,
+          "memory_retrieved": 0,
+          "memory_used": 0,
+          "message_count": 8,
+          "protocol_bytes": 16270,
+          "repeated_tool_call_count": 0,
+          "state_bytes": 256,
+          "state_transfer_count": 1,
+          "success": true,
+          "text_chars": 0,
+          "text_tokens": 0,
+          "tool_call_count": 0
+        },
+        "missing_answer_contains": [],
+        "normalized_evaluation_pass": true,
+        "round": 2,
+        "run_success": true,
+        "task_hash": "2fe6b8c732d8d4f04c08ded5904b5dc20f940e93be7f7cdc5a55a645bb6e8df6"
+      },
+      {
+        "answer_sha256": "49b10791bf10a89c97abf1df3f9934bf9f16e54a26d0b9ac0b95b029da8a6b9f",
+        "error": null,
+        "evaluation_pass": true,
+        "existing_evaluation_pass": true,
+        "matched_answer_contains": [
+          "nmcli device show"
+        ],
+        "memory_validation": {
+          "memory_used": 1,
+          "runtime_memory_effective_strict": 1,
+          "runtime_memory_harmful_strict": 0,
+          "strict_vs_validated_discrepancy": false,
+          "validated_memory_effective": 1,
+          "validated_memory_harmful": 0
+        },
+        "metrics": {
+          "artifact_ref_count": 1,
+          "latency_ms": 35181.628659,
+          "llm_call_count": 2,
+          "llm_completion_tokens": 1889,
+          "llm_latency_ms": 33473.14146399731,
+          "llm_prompt_tokens": 553,
+          "llm_total_tokens": 2442,
+          "llm_usage_missing_count": 0,
+          "memory_effective": 1,
+          "memory_harmful": 0,
+          "memory_retrieved": 1,
+          "memory_used": 1,
+          "message_count": 8,
+          "protocol_bytes": 16649,
+          "repeated_tool_call_count": 0,
+          "state_bytes": 256,
+          "state_transfer_count": 1,
+          "success": true,
+          "text_chars": 0,
+          "text_tokens": 0,
+          "tool_call_count": 0
+        },
+        "missing_answer_contains": [],
+        "normalized_evaluation_pass": true,
+        "round": 8,
+        "run_success": true,
+        "task_hash": "2fe6b8c732d8d4f04c08ded5904b5dc20f940e93be7f7cdc5a55a645bb6e8df6"
+      }
+    ],
+    "strict_vs_validated_discrepancy_count": 0
+  },
+  "pass": true,
+  "passed": true,
+  "phase": "calibration",
+  "provider_probe": {
+    "answer_non_empty": true,
+    "answer_sha256": "a2542670074ea3e0c6876ad6d0f75e2dc933461c6b765c0c5fab376a498215b8",
+    "completion_tokens": 312,
+    "error": null,
+    "finish_reason": "stop",
+    "latency_ms": 5981.239171997004,
+    "model": "qwen3.7-plus-2026-05-26",
+    "passed": true,
+    "prompt_tokens": 33,
+    "request_id": "195b19e3-a46e-9e98-ba98-268739eb1d3d",
+    "total_tokens": 345
+  },
+  "provider_usage": {
+    "embedding_call_count": 11,
+    "embedding_calls": [
+      {
+        "call_index": 1,
+        "dim": 1024,
+        "input_chars": 40,
+        "input_count": 2,
+        "latency_ms": 406.3943750006729,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 2,
+        "dim": 1024,
+        "input_chars": 1349,
+        "input_count": 5,
+        "latency_ms": 1473.5623270025826,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 3,
+        "dim": 1024,
+        "input_chars": 117,
+        "input_count": 1,
+        "latency_ms": 408.8105819973862,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 4,
+        "dim": 1024,
+        "input_chars": 33,
+        "input_count": 1,
+        "latency_ms": 521.9213330019556,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 5,
+        "dim": 1024,
+        "input_chars": 1349,
+        "input_count": 5,
+        "latency_ms": 437.28733800162445,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 6,
+        "dim": 1024,
+        "input_chars": 117,
+        "input_count": 1,
+        "latency_ms": 475.6982600010815,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 7,
+        "dim": 1024,
+        "input_chars": 558,
+        "input_count": 1,
+        "latency_ms": 514.9092110004858,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 8,
+        "dim": 1024,
+        "input_chars": 28,
+        "input_count": 1,
+        "latency_ms": 398.20304599925294,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 9,
+        "dim": 1024,
+        "input_chars": 558,
+        "input_count": 1,
+        "latency_ms": 611.4470309985336,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 10,
+        "dim": 1024,
+        "input_chars": 558,
+        "input_count": 1,
+        "latency_ms": 264.31559099728474,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      },
+      {
+        "call_index": 11,
+        "dim": 1024,
+        "input_chars": 28,
+        "input_count": 1,
+        "latency_ms": 416.56276299909223,
+        "model": "qwen3.7-text-embedding",
+        "provider": "openai_compatible"
+      }
+    ],
+    "embedding_input_chars": 4735,
+    "embedding_input_count": 20,
+    "embedding_latency_ms": 5929.111856999953,
+    "llm_call_count": 9,
+    "llm_calls": [
+      {
+        "call_index": 1,
+        "completion_tokens": 312,
+        "finish_reason": "stop",
+        "latency_ms": 5981.239171997004,
+        "model": "qwen3.7-plus-2026-05-26",
+        "prompt_tokens": 33,
+        "provider": "openai_compatible",
+        "request_id": "195b19e3-a46e-9e98-ba98-268739eb1d3d",
+        "total_tokens": 345
+      },
+      {
+        "call_index": 2,
+        "completion_tokens": 1491,
+        "finish_reason": "stop",
+        "latency_ms": 25791.075703000388,
+        "model": "qwen3.7-plus-2026-05-26",
+        "prompt_tokens": 49,
+        "provider": "openai_compatible",
+        "request_id": "a33ee095-dfb4-9e54-8468-55f0ce1d8a6d",
+        "total_tokens": 1540
+      },
+      {
+        "call_index": 3,
+        "completion_tokens": 251,
+        "finish_reason": "stop",
+        "latency_ms": 5013.746339001955,
+        "model": "qwen3.7-plus-2026-05-26",
+        "prompt_tokens": 504,
+        "provider": "openai_compatible",
+        "request_id": "8f211522-d888-92c8-bdc7-ef547aeb9619",
+        "total_tokens": 755
+      },
+      {
+        "call_index": 4,
+        "completion_tokens": 1638,
+        "finish_reason": "stop",
+        "latency_ms": 28281.116210997425,
+        "model": "qwen3.7-plus-2026-05-26",
+        "prompt_tokens": 49,
+        "provider": "openai_compatible",
+        "request_id": "50620ba6-d2f5-9d57-ab5d-4dbdff63cfb2",
+        "total_tokens": 1687
+      },
+      {
+        "call_index": 5,
+        "completion_tokens": 251,
+        "finish_reason": "stop",
+        "latency_ms": 5192.025252999883,
+        "model": "qwen3.7-plus-2026-05-26",
+        "prompt_tokens": 504,
+        "provider": "openai_compatible",
+        "request_id": "94900e4a-3525-9758-943f-f0c0349cca8f",
+        "total_tokens": 755
+      },
+      {
+        "call_index": 6,
+        "completion_tokens": 1341,
+        "finish_reason": "stop",
+        "latency_ms": 23293.755564001913,
+        "model": "qwen3.7-plus-2026-05-26",
+        "prompt_tokens": 218,
+        "provider": "openai_compatible",
+        "request_id": "75f29685-22aa-9719-891f-dccbf92e479e",
+        "total_tokens": 1559
+      },
+      {
+        "call_index": 7,
+        "completion_tokens": 206,
+        "finish_reason": "stop",
+        "latency_ms": 4948.717339000723,
+        "model": "qwen3.7-plus-2026-05-26",
+        "prompt_tokens": 331,
+        "provider": "openai_compatible",
+        "request_id": "ba24e79c-6076-9405-ba52-522b7dc37c7c",
+        "total_tokens": 537
+      },
+      {
+        "call_index": 8,
+        "completion_tokens": 369,
+        "finish_reason": "stop",
+        "latency_ms": 7080.756774001202,
+        "model": "qwen3.7-plus-2026-05-26",
+        "prompt_tokens": 218,
+        "provider": "openai_compatible",
+        "request_id": "07f70642-46cb-98a0-95fd-835922521817",
+        "total_tokens": 587
+      },
+      {
+        "call_index": 9,
+        "completion_tokens": 229,
+        "finish_reason": "stop",
+        "latency_ms": 5291.08129299857,
+        "model": "qwen3.7-plus-2026-05-26",
+        "prompt_tokens": 330,
+        "provider": "openai_compatible",
+        "request_id": "5e35891e-2eb4-992c-9a36-9f8982d0b4c8",
+        "total_tokens": 559
+      }
+    ],
+    "llm_completion_tokens": 6088,
+    "llm_latency_ms": 110873.51364799906,
+    "llm_prompt_tokens": 2236,
+    "llm_total_tokens": 8324,
+    "llm_usage_missing_count": 0
+  },
+  "real_api": true,
+  "secret_audit": {
+    "files_scanned": 5,
+    "finding_files": [],
+    "passed": true
+  },
+  "shm_probe": {
+    "checksum_valid": true,
+    "consumed_norm": 1.0,
+    "dtype": "float32",
+    "error": null,
+    "nbytes": 256,
+    "passed": true,
+    "released": true,
+    "shape": [
+      64
+    ],
+    "transport": "shm"
+  }
+}
