@@ -14,6 +14,8 @@ def render_report(summary: dict[str, Any]) -> str:
         return _render_e6(summary)
     if summary.get("experiment") == "E7":
         return _render_e7(summary)
+    if summary.get("experiment") == "E8":
+        return _render_e8(summary)
     if "inproc" in summary and "shm" in summary:
         return _render_e4(summary)
     raise ValueError("unsupported formal experiment summary")
@@ -280,6 +282,195 @@ def _render_e7(summary: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines) + "\n"
+
+def _render_e8(summary: dict[str, Any]) -> str:
+    provider = summary.get("provider", {})
+    overall = summary["overall"]
+
+    lines = [
+        "# E8 End-to-End Full-System Benchmark",
+        "",
+        f"Overall pass: **{summary['passed']}**",
+        f"Integrity pass: **{summary['integrity_pass']}**",
+        f"Infrastructure valid: **{summary['infrastructure_valid']}**",
+        f"Comparison valid: **{summary['comparison_valid']}**",
+        f"Quality gate pass: **{summary['quality_gate_pass']}**",
+        f"Fast-path safety pass: **{summary['fast_path_safety_pass']}**",
+        f"Infrastructure failures: **{summary['infrastructure_failure_count']}**",
+        f"Rows: **{summary['row_count']}/{summary['expected_row_count']}**",
+        f"Workload: {summary['workload']} (50% exact-repeat)",
+        f"Baseline: {summary['baseline']}",
+        f"Full system: {summary['full_system']}",
+    ]
+    if provider.get("llm_model"):
+        lines.append(f"LLM model: `{provider['llm_model']}`")
+    if provider.get("embedding_model"):
+        lines.append(
+            f"Embedding: `{provider['embedding_model']}` "
+            f"(dim={provider.get('embedding_dim')})"
+        )
+    if provider.get("api_region"):
+        lines.append(f"API region: `{provider['api_region']}`")
+    if provider.get("timeout_sec") is not None:
+        lines.append(
+            f"Provider timeout: **{float(provider['timeout_sec']):.0f}s**"
+        )
+    if provider.get("max_retries") is not None:
+        lines.append(
+            f"Provider max retries: **{int(provider['max_retries'])}**"
+        )
+    if summary.get("git_sha"):
+        lines.append(f"Git SHA: `{summary['git_sha']}`")
+    if summary.get("infrastructure_failure_types"):
+        lines.append(
+            "Infrastructure failure types: "
+            + ", ".join(
+                f"`{name}`"
+                for name in summary["infrastructure_failure_types"]
+            )
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Overall",
+            "",
+            "| Config | Eval pass | Provider tokens | LLM calls | "
+            "Wire tokens | Wire bytes | Messages | Tool calls | "
+            "State transfers | State bytes | Fast hits | Mean latency ms |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for name in ("A-Text", "D-Full"):
+        item = overall["configs"][name]
+        lines.append(
+            f"| {name} | {item['evaluation_pass_rate']:.1%} | "
+            f"{item['total_llm_tokens']} | {item['total_llm_calls']} | "
+            f"{item['total_wire_tokens']} | {item['total_wire_bytes']} | "
+            f"{item['total_message_count']} | {item['total_tool_calls']} | "
+            f"{item['total_state_transfer_count']} | {item['total_state_bytes']} | "
+            f"{item['total_fast_path_hits']} | {item['mean_latency_ms']:.3f} |"
+        )
+
+    _append_e8_delta(
+        lines,
+        "A-Text vs D-Full — overall",
+        overall["a_vs_full"],
+        valid=overall["comparison_valid"],
+    )
+
+    for phase, title in (
+        ("new", "New-task half"),
+        ("repeat", "Exact-repeat half"),
+    ):
+        phase_data = overall["phases"][phase]
+        lines.extend(
+            [
+                "",
+                f"## {title}",
+                "",
+                "| Config | Tasks | Eval pass | Provider tokens | LLM calls | "
+                "Wire tokens | Wire bytes | Tool calls | Fast hits | "
+                "Mean latency ms |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for name in ("A-Text", "D-Full"):
+            item = phase_data["configs"][name]
+            lines.append(
+                f"| {name} | {item['task_count']} | "
+                f"{item['evaluation_pass_rate']:.1%} | "
+                f"{item['total_llm_tokens']} | {item['total_llm_calls']} | "
+                f"{item['total_wire_tokens']} | {item['total_wire_bytes']} | "
+                f"{item['total_tool_calls']} | {item['total_fast_path_hits']} | "
+                f"{item['mean_latency_ms']:.3f} |"
+            )
+        _append_e8_delta(
+            lines,
+            f"A-Text vs D-Full — {title.lower()}",
+            phase_data["a_vs_full"],
+            valid=phase_data["comparison_valid"],
+        )
+
+    for group in ("knowledge", "codeact"):
+        data = summary["groups"][group]
+        lines.extend(
+            [
+                "",
+                f"## {group.title()}",
+                "",
+                "| Config | Eval pass | Provider tokens | LLM calls | "
+                "Wire tokens | Wire bytes | Tool calls | Fast hits | "
+                "Mean latency ms |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for name in ("A-Text", "D-Full"):
+            item = data["configs"][name]
+            lines.append(
+                f"| {name} | {item['evaluation_pass_rate']:.1%} | "
+                f"{item['total_llm_tokens']} | {item['total_llm_calls']} | "
+                f"{item['total_wire_tokens']} | {item['total_wire_bytes']} | "
+                f"{item['total_tool_calls']} | {item['total_fast_path_hits']} | "
+                f"{item['mean_latency_ms']:.3f} |"
+            )
+        _append_e8_delta(
+            lines,
+            f"A-Text vs D-Full — {group}",
+            data["a_vs_full"],
+            valid=data["comparison_valid"],
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Measurement scope",
+            "",
+            f"- Fairness: {summary['fairness']}",
+            f"- Accounting: {summary['measurement_note']}",
+            "- The overall result intentionally uses a 50% exact-repeat workload. "
+            "Use the New-task half to discuss fresh-task full-stack cost/benefit; "
+            "use the Exact-repeat half to discuss validated memory reuse.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _append_e8_delta(
+    lines: list[str],
+    title: str,
+    delta: dict[str, float],
+    *,
+    valid: bool,
+) -> None:
+    heading = (
+        f"### {title}"
+        if valid
+        else f"### {title} (diagnostic only; comparison invalid)"
+    )
+    lines.extend(
+        [
+            "",
+            heading,
+            "",
+            f"- Provider prompt token saving: "
+            f"{delta['provider_prompt_token_saving_pct']:.2f}%",
+            f"- Provider total token saving: "
+            f"{delta['provider_total_token_saving_pct']:.2f}%",
+            f"- LLM call reduction: "
+            f"{delta['llm_call_reduction_pct']:.2f}%",
+            f"- Message reduction: "
+            f"{delta['message_reduction_pct']:.2f}%",
+            f"- Wire token saving: "
+            f"{delta['wire_token_saving_pct']:.2f}%",
+            f"- Wire byte saving: "
+            f"{delta['wire_byte_saving_pct']:.2f}%",
+            f"- Tool-call reduction: "
+            f"{delta['tool_call_reduction_pct']:.2f}%",
+            f"- Latency reduction: "
+            f"{delta['latency_reduction_pct']:.2f}%",
+        ]
+    )
 
 def _render_e4(summary: dict[str, Any]) -> str:
     lines = [

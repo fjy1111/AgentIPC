@@ -14,7 +14,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "experiment",
-        choices=["e1", "e2", "e3", "e4", "e5", "e6", "e7"],
+        choices=["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8"],
     )
     parser.add_argument("--repeat", type=int, default=3)
     parser.add_argument("--provider", choices=["openai", "mock"], default="mock")
@@ -28,11 +28,11 @@ def main() -> None:
         parser.error("--input is supported only for e1")
 
     needs_real_api = (
-        args.experiment in {"e2", "e3", "e6"}
+        args.experiment in {"e2", "e3", "e6", "e8"}
         or (args.experiment == "e1" and args.provider == "openai")
     )
-    if args.experiment in {"e2", "e3", "e6"} and args.provider != "openai":
-        parser.error("e2/e3/e6 require --provider openai")
+    if args.experiment in {"e2", "e3", "e6", "e8"} and args.provider != "openai":
+        parser.error("e2/e3/e6/e8 require --provider openai")
     if needs_real_api and not args.confirm_real_api:
         print("Real API execution requires --confirm-real-api", file=sys.stderr)
         raise SystemExit(2)
@@ -45,6 +45,7 @@ def main() -> None:
         "e5": "e5-communication",
         "e6": "e6-memory-fast-path",
         "e7": "e7-state-exchange",
+        "e8": "e8-full-system",
     }
     root = Path("results/formal") / (
         labels[args.experiment]
@@ -91,6 +92,14 @@ def main() -> None:
         from agentipc.experiments.formal.e7_state_exchange import run_e7
 
         rows, summary = run_e7(repeat=args.repeat)
+    elif args.experiment == "e8":
+        from agentipc.experiments.formal.e8_full_system import run_e8
+
+        rows, summary = run_e8(
+            root=Path(".").resolve(),
+            result_dir=root,
+            repeat=args.repeat,
+        )
     elif args.experiment == "e1":
         from agentipc.experiments.formal.factory import build_factory
 
