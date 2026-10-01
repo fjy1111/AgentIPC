@@ -5,8 +5,9 @@ from pathlib import Path
 from agentipc.experiments.formal import render_report, run_e1
 
 def main():
- p=argparse.ArgumentParser(); p.add_argument("experiment",choices=["e1","e2","e3","e4"]); p.add_argument("--repeat",type=int,default=3); p.add_argument("--provider",choices=["openai","mock"],default="openai"); p.add_argument("--input",type=Path); a=p.parse_args()
- root=Path("results/formal")/("e1-abcd-"+datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")); root.mkdir(parents=True,exist_ok=False)
+ p=argparse.ArgumentParser(); p.add_argument("experiment",choices=["e1","e2","e3","e4"]); p.add_argument("--repeat",type=int,default=3); p.add_argument("--provider",choices=["openai","mock"],default="mock"); p.add_argument("--input",type=Path); a=p.parse_args()
+ labels={"e1":"e1-abcd","e2":"e2-knowledge","e3":"e3-codeact","e4":"e4-shm"}
+ root=Path("results/formal")/(labels[a.experiment]+"-"+datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")); root.mkdir(parents=True,exist_ok=False)
  if a.input:
   from agentipc.experiments.formal.aggregation import aggregate_records
   rows=[json.loads(x) for x in a.input.read_text(encoding="utf-8").splitlines() if x.strip()]; summary=aggregate_records(rows)
