@@ -17,7 +17,12 @@ def main():
   for r in rows: summary[r["experiment"]]={"mean_latency_ms":sum(x["latency_ms"] for x in rows if x["experiment"]==r["experiment"])/a.repeat,"mean_state_bytes":r["state_bytes"]}
  else:
   from agentipc.experiments.formal.factory import build_factory
-  tasks,factory=build_factory(root=root/"work",provider=a.provider); rows,summary=(run_e1(tasks=tasks,repeat=a.repeat,run_factory=factory) if a.experiment=="e1" else (__import__("agentipc.experiments.formal.e2_knowledge",fromlist=["run_e2"]).run_e2(factory=factory,root=Path("."),repeat=a.repeat) if a.experiment=="e2" else __import__("agentipc.experiments.formal.e3_codeact",fromlist=["run_e3"]).run_e3(factory=factory,root=Path("."),repeat=a.repeat)))
+  if a.experiment=="e1":
+   tasks,factory=build_factory(root=root/"work",provider=a.provider); rows,summary=run_e1(tasks=tasks,repeat=a.repeat,run_factory=factory)
+  elif a.experiment=="e2":
+   from agentipc.experiments.formal.e2_knowledge import run_e2; rows,summary=run_e2(root=Path("."),result_dir=root,repeat=a.repeat)
+  else:
+   from agentipc.experiments.formal.e3_codeact import run_e3; rows,summary=run_e3(root=Path("."),result_dir=root,repeat=a.repeat)
  (root/"environment.json").write_text(json.dumps({"python":sys.version,"platform":platform.platform(),"repeat":a.repeat,"provider":a.provider},indent=2),encoding="utf-8")
  (root/"raw.jsonl").write_text("\n".join(json.dumps(x,ensure_ascii=False) for x in rows)+"\n",encoding="utf-8")
  (root/"summary.json").write_text(json.dumps(summary,indent=2),encoding="utf-8")
